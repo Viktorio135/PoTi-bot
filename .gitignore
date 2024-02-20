@@ -2,3 +2,5 @@ __pycache__
 venv
 static/users_photo
 .DS_Store
+dump.json
+users_photo

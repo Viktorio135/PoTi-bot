@@ -24,13 +24,14 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(100))
     sex = Column(String(10))
+    search_to = Column(String(10))
     age = Column(Integer)
     description = Column(Text(1000))
     user_name = Column(String(100))
     user_id = Column(String(100))
     is_active = Column(Boolean)
     photos = Column(String(500))
-    university = Column(String(1000), ForeignKey('university.name'))  # Изменено на 'university.id'
+    university = Column(Integer, ForeignKey('university.id'))  # Изменено на 'university.id'
     speciality = Column(String(1000))
     course = Column(Integer)
     education = Column(String(100))
@@ -41,7 +42,7 @@ class University(Base):
     __tablename__ = 'university'
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(1000))  # Добавлен index
+    name = Column(String(500))  # Добавлен index
 
 
 def start_db():
