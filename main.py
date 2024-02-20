@@ -368,53 +368,87 @@ async def repeat_profile(callback_query: types.CallbackQuery):
     
 @dp.message_handler(Text('Cмотреть анкеты'))
 async def search_love_reg(msg: types.Message):
-    if (str(msg.from_user.id) not in dict_of_profiles) or (len(dict_of_profiles[str(msg.from_user.id)]["profiles_list"]) == 0):
-        list_of_profiles = await get_list_of_profiles(str(msg.from_user.id))
-        dict_of_profiles[str(msg.from_user.id)] = {
-            "profiles_list": list_of_profiles,
-            "last_activity": str(datetime.now()),
-            "like": [],
-            "dislike": [],
-            "who_like": [],
-        }
-        await update_active(str(msg.from_user.id))
-    await search_love_step1(msg)
+    user_id = str(msg.from_user.id)
+    if user_id not in dict_of_profiles:
+        list_of_profiles = await get_list_of_profiles(user_id)
+        dict_of_profiles[user_id] = {
+                "profiles_list": list_of_profiles,
+                "last_activity": str(datetime.now()),
+                "like": [],
+                "dislike": [],
+                "who_like": [],
+            }
+        print(dict_of_profiles[user_id])
+        await search_love_step1(msg)
+    else:
+        if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
+            list_of_profiles = await get_list_of_profiles(user_id)
+            if len(list_of_profiles) != 0:
+                dict_of_profiles[user_id]["profiles_list"] = list_of_profiles
+                await search_love_step1(msg)
+            else:
+                await bot.send_message(
+                    msg.from_user.id,
+                    'Пользователи не найдены'
+                )
+
+    
+
+        
+
     
          
 async def search_love_step1(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
 
-    next_profile = await get_user_by_id(dict_of_profiles[str(msg.from_user.id)]["profiles_list"][-1], Anketa=True)
-    next_progile_id = dict_of_profiles[str(msg.from_user.id)]["profiles_list"][-1]
-    await bot.send_photo(
-        msg.from_user.id,
-        open(f'static/users_photo/{next_progile_id}.jpg', 'rb'),
-        next_profile,
-        reply_markup=search_kb()
-    )
+    if list_of_profiles == 'Пользователи не найдены':
+        await bot.send_message(
+            msg.from_user.id,
+            'Пользователи не найдены'
+        )
+        
+    else:
+        if len(list_of_profiles) != 0:
+            next_profile_id = list_of_profiles[-1]
+            next_profile = await get_user_by_id(next_profile_id, Anketa=True)
+            print(list_of_profiles)
+            await bot.send_photo(
+                msg.from_user.id,
+                open(f'static/users_photo/{next_profile_id}.jpg', 'rb'),
+                next_profile,
+                reply_markup=search_kb()
+            )
+        else:
+            await search_love_reg(msg)
 
+    
 @dp.message_handler(Text('❤️'))
 async def like_main(msg: types.Message):
-    dict_of_profiles[str(msg.from_user.id)]["like"].append(dict_of_profiles[str(msg.from_user.id)]["profiles_list"][-1])
-    liked_profile = dict_of_profiles[str(msg.from_user.id)]["profiles_list"][-1]
-    dict_of_profiles[liked_profile]["who_like"].append(str(msg.from_user.id))
-    who_len = len(dict_of_profiles[liked_profile]["who_like"])
+    user_id = str(msg.from_user.id)
+    list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
+    like = list_of_profiles[-1]
+    dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
+    liked_profile = await get_user_by_id(user_id, Anketa=True)
+    who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
+    dict_of_profiles[user_id]["profiles_list"].pop()
     await bot.send_message(
-        liked_profile,
+        like,
         'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
         reply_markup=show_like_kb()
     )
-   
-    # dict_of_profiles[str(msg.from_user.id)]["like"].pop()
 
     await bot.send_message(
         msg.from_user.id,
         'Сердечко успешно отправлено)))',
     )
 
+    await search_love_step1(msg)
+
 @dp.message_handler(Text('👎'))
 async def dislike_main(msg: types.Message):
     dict_of_profiles[str(msg.from_user.id)]["profiles_list"].pop()
-    await search_love_reg(msg)
+    await search_love_step1(msg)
 
 
 @dp.message_handler(Text('Показать'))
@@ -432,8 +466,13 @@ async def show_like(msg: types.Message):
 async def like_liked(msg: types.Message):
     who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"]
     user = await get_user_by_id(who_like[-1])
+    user_like = await get_user_by_id(str(msg.from_user.id))
+    who_like_id = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
     dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
-    
+    await bot.send_message(
+        who_like_id,
+        f'У вас взаимная симпатия,\n Надеюсь что-то у вас выйдет()()()(): @{user_like["user_name"]} '
+    )
     await bot.send_message(
         msg.from_user.id, 
         f'Надеюсь что-то у вас выйдет()()()(): @{user["user_name"]}'
@@ -445,7 +484,8 @@ async def like_liked(msg: types.Message):
             msg.from_user.id,
             'Вы вернулись к просмотрю анкет)'
         )
-        await search_love_reg(msg)
+    if len(dict_of_profiles[str(msg.from_user.id)]["profiles_list"]) != 0:
+        await search_love_step1(msg)
 
 @dp.message_handler(Text('👎🏻'))
 async def dislike_liked(msg: types.Message):

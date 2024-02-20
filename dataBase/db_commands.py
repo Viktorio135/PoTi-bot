@@ -69,24 +69,29 @@ def update_active(user_id):
 
 @sync_to_async
 def get_list_of_profiles(user_id):
-    try:
-        with Session(autoflush=False, bind=engine) as session:
-            obj = session.query(User).filter(User.user_id == user_id).first()
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        list_of_profiles = []
+        whom = obj.search_to
+        users = session.query(User).all()
+        if users != None:
             
-            if obj.search_to == 'girl':
-                objects = session.query(User).filter(User.is_active==1).filter(User.search_to=='boy').all()
-            elif obj.search_to == 'boy':
-                objects = session.query(User).filter(User.is_active==1).filter(User.search_to=='girl').all()
-            list_of_profiles = []
-            for ob in objects:
+            for user in users:
+                if user.sex == whom:
+                    list_of_profiles.append(user.user_id)
+            
+            if len(list_of_profiles) == 1:
+                return list_of_profiles
+            elif len(list_of_profiles) == 0:
+                return []
+            elif len(list_of_profiles) > 1:
                 
-                list_of_profiles.append(ob.user_id)
-            if len(list_of_profiles) != 1:
-                list_of_profiles = random.shuffle(list_of_profiles)
+                random.shuffle(list_of_profiles)
+                print(list_of_profiles)
+                return list_of_profiles
+        else:
             return list_of_profiles
-    except Exception as e:
-        print(e)
-        return 0
+
         
 
 

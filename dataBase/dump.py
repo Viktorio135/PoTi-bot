@@ -10,3 +10,4 @@ def dump_dict(dict_of_profiles):
         return 1
     except:
         return 0
+    
