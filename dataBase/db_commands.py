@@ -59,13 +59,20 @@ def delete_profile(user_id):
             return 0
 
 @sync_to_async
-def update_active(user_id):
-    try:
-        with Session(autoflush=False, bind=engine) as session:
-            obj = session.query(User).filter(User.user_id == user_id).update({User.is_active: True})
+def update_active_to_true(user_id):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.is_active = True
+        session.commit()
         return 1
-    except:
-        return 0
+    
+@sync_to_async
+def update_active_to_false(user_id):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.is_active = False
+        session.commit()
+        return 1
 
 @sync_to_async
 def get_list_of_profiles(user_id):
@@ -73,7 +80,7 @@ def get_list_of_profiles(user_id):
         obj = session.query(User).filter(User.user_id == user_id).first()
         list_of_profiles = []
         whom = obj.search_to
-        users = session.query(User).all()
+        users = session.query(User).filter(User.is_active == True).all()
         if users != None:
             
             for user in users:

@@ -1,6 +1,11 @@
 import json
 from datetime import datetime
 
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters import Text
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
 from dataBase.db_commands import (
     create_user, 
     has_register, 
@@ -9,7 +14,8 @@ from dataBase.db_commands import (
     get_user_by_id,
     delete_profile, 
     get_list_of_profiles,
-    update_active
+    update_active_to_true,
+    update_active_to_false
 )
 from keyboards import (
     select_sex, 
@@ -22,18 +28,12 @@ from keyboards import (
     select_search,
     search_kb,
     show_like_kb,
-    like_kb
-    
+    like_kb,
 )
 from dataBase.dump import dump_dict
 from dataBase.models import start_db
 from states.user_states import Register_new_user
 
-
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Text
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 
 bot = Bot(token='6874586651:AAFeVAJ4fOIR_z2uWcG1Og5kaWOhkNCH3U0')
@@ -362,6 +362,14 @@ async def repeat_profile(callback_query: types.CallbackQuery):
     await delete_profile(callback_query.message.chat.id)
     await register_or_update_user(callback_query, is_new=True)
 
+@dp.callback_query_handler(lambda c: c.data == 'disable_active')
+async def disable_active(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    await update_active_to_false(user_id)
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Мы отключили вашу анкету, надеюсь вы кого-нибудь нашли)'
+    )
 ########################################################################################
     
 ################################### Смотреть анкеты ######################################
@@ -369,6 +377,7 @@ async def repeat_profile(callback_query: types.CallbackQuery):
 @dp.message_handler(Text('Cмотреть анкеты'))
 async def search_love_reg(msg: types.Message):
     user_id = str(msg.from_user.id)
+    await update_active_to_true(user_id)
     if user_id not in dict_of_profiles:
         list_of_profiles = await get_list_of_profiles(user_id)
         dict_of_profiles[user_id] = {
@@ -378,7 +387,7 @@ async def search_love_reg(msg: types.Message):
                 "dislike": [],
                 "who_like": [],
             }
-        print(dict_of_profiles[user_id])
+        
         await search_love_step1(msg)
     else:
         if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
@@ -391,13 +400,12 @@ async def search_love_reg(msg: types.Message):
                     msg.from_user.id,
                     'Пользователи не найдены'
                 )
+        else:
+            await search_love_step1(msg)
 
     
 
-        
 
-    
-         
 async def search_love_step1(msg: types.Message):
     user_id = str(msg.from_user.id)
     list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
@@ -450,6 +458,11 @@ async def dislike_main(msg: types.Message):
     dict_of_profiles[str(msg.from_user.id)]["profiles_list"].pop()
     await search_love_step1(msg)
 
+@dp.message_handler(Text('💤'))
+async def sleep_main(msg: types.Message):
+    dict_of_profiles[str(msg.from_user.id)]["profiles_list"].pop()
+    await menu(msg)
+
 
 @dp.message_handler(Text('Показать'))
 async def show_like(msg: types.Message):
@@ -484,8 +497,7 @@ async def like_liked(msg: types.Message):
             msg.from_user.id,
             'Вы вернулись к просмотрю анкет)'
         )
-    if len(dict_of_profiles[str(msg.from_user.id)]["profiles_list"]) != 0:
-        await search_love_step1(msg)
+    await search_love_step1(msg)
 
 @dp.message_handler(Text('👎🏻'))
 async def dislike_liked(msg: types.Message):
@@ -497,7 +509,7 @@ async def dislike_liked(msg: types.Message):
             msg.from_user.id,
             'Вы вернулись к просмотрю анкет)'
         )
-        await search_love_reg(msg)
+        await search_love_step1(msg)
 
 
 

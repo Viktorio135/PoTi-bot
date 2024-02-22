@@ -60,7 +60,8 @@ def reg_menu():
 
 def my_profile_kb():
     btn1 = InlineKeyboardButton(text='Заполнить анкету заново', callback_data='repeat_profile')
-    keyboard = InlineKeyboardMarkup().add(btn1)
+    btn2 = InlineKeyboardButton(text='Я больше не хочу никого искать ', callback_data='disable_active')
+    keyboard = InlineKeyboardMarkup().add(btn1).add(btn2)
     return keyboard
 
 def search_kb():
