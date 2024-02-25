@@ -15,7 +15,12 @@ from dataBase.db_commands import (
     delete_profile, 
     get_list_of_profiles,
     update_active_to_true,
-    update_active_to_false
+    update_active_to_false,
+    update_filter_age_max,
+    update_filter_age_min,
+    update_filter_university_db,
+    update_filter_cource,
+    update_filter_education_db
 )
 from keyboards import (
     select_sex, 
@@ -29,10 +34,18 @@ from keyboards import (
     search_kb,
     show_like_kb,
     like_kb,
+    filters_main_kb,
+    filter_cource_age_kb,
 )
 from dataBase.dump import dump_dict
 from dataBase.models import start_db
-from states.user_states import Register_new_user
+from states.user_states import (
+    Register_new_user, 
+    Filter_age, 
+    Filter_university, 
+    Filter_course,
+)
+
 
 
 
@@ -140,7 +153,7 @@ async def register_age(msg: types.Message, state: FSMContext):
 @dp.message_handler(state=Register_new_user.description)
 async def register_description(msg: types.Message, state: FSMContext):
     async with state.proxy() as data:
-                data['description'] = msg.text
+                data['description'] = '' if msg.text == '0' else msg.text
     await bot.send_message(
         msg.from_user.id, 
         'Отлично, давай теперь определимся с учебным заведением!',
@@ -231,7 +244,6 @@ async def register_description(msg: types.Message, state: FSMContext):
         return
     
 async def end_registration(msg: types.Message, data):
-
     datas = {
         "name": data["name"],
         "sex": data["sex"], 
@@ -314,7 +326,7 @@ async def repeat_reg(callback_query: types.CallbackQuery):
 ##########################################################################################
 
 #################################### Главное меню #####################################
-
+@dp.message_handler(Text('Вернуться назад'))
 @dp.message_handler(Text('Главное меню'))
 @dp.message_handler(commands='menu')
 async def menu(msg: types.Message):
@@ -324,7 +336,7 @@ async def menu(msg: types.Message):
         if user != 'Error' and user != 'User not found':
             await bot.send_message(
                 msg.from_user.id,
-                f'Привет, {user["name"]}, ты попал в главное меню, выбери действие;)',
+                f'{user["name"]}, ты попал в главное меню, выбери действие;)',
                 reply_markup=menu_kb()
             )
         else: 
@@ -413,14 +425,14 @@ async def search_love_step1(msg: types.Message):
     if list_of_profiles == 'Пользователи не найдены':
         await bot.send_message(
             msg.from_user.id,
-            'Пользователи не найдены'
+            'Пользователи не найдены',
+            reply_markup=search_kb()
         )
         
     else:
         if len(list_of_profiles) != 0:
             next_profile_id = list_of_profiles[-1]
             next_profile = await get_user_by_id(next_profile_id, Anketa=True)
-            print(list_of_profiles)
             await bot.send_photo(
                 msg.from_user.id,
                 open(f'static/users_photo/{next_profile_id}.jpg', 'rb'),
@@ -511,8 +523,230 @@ async def dislike_liked(msg: types.Message):
         )
         await search_love_step1(msg)
 
+########################################################################################
+        
+################################### Фильтры ########################################################
+        
+@dp.message_handler(Text('Фильтр'))
+async def filter(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    data = await get_user_by_id(user_id)
+    university = await get_university_name_by_id(data["to_university"])
+    match data["to_education"]:
+        case 'spo':
+            data["to_education"] = 'СПО'
+        case 'bakalavriat':
+            data["to_education"] = 'Бакалавриат'
+        case 'specialitet':
+            data["to_education"] = 'Специалитет'
+        case 'magistratura':
+            data["to_education"] = 'Магистратура'
+        case 'all':
+            data["to_education"] = 'Любая'
+    await bot.send_message(
+        msg.from_user.id,
+        f'Ваши фильтры:\n\n\
+Учебное заведение - {university}\n\
+Форма обучения - {data["to_education"]}\n\
+Курс обучения - {"Любой" if data["to_course"] == 0 else data["to_course"]}\n\
+Максимальный возраст - {"Любой" if data["max_age"] == 0 else data["max_age"]}\n\
+Минимальный возраст - {"Любой" if data["min_age"] == 0 else data["min_age"]}\n\n\
+Что вы хотите поменять?' ,
+        reply_markup=filters_main_kb()
+    )
+
+@dp.message_handler(Text('Возраст'))
+async def update_filter_age(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id,
+        'Введите возраст в формате:\n\n"нижняя граница" - "верхняя граница"\nНапример 18-20\n\nЕсли вы хотите определенный возраст, отправьте просто одно число)',
+        reply_markup=filter_cource_age_kb(is_filter_age=True)
+    )   
+    await Filter_age.age.set()
 
 
+
+@dp.message_handler(state=Filter_age.age)
+async def state_filter_age(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
+    age = msg.text
+    if age.isdigit():
+        if 15 <= int(age) < 100:
+            async with state.proxy() as data:
+                data['age'] = msg.text
+            await update_filter_age_max(user_id, int(data["age"]))
+            await update_filter_age_min(user_id, int(data["age"]))
+            await state.finish()
+            await bot.send_message(
+                msg.from_user.id,
+                'Возраст успешно обновлен!'
+            )
+            await filter(msg)
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Пожалуйста, введите корректный возраст, от 15 лет'
+            )
+            return
+    else:
+        try:
+            age = age.replace(' ', '')
+            split_age = age.split('-')
+            min_age = split_age[0]
+            max_age = split_age[1]
+            if min_age.isdigit() and max_age.isdigit():
+                if (15 <= int(min_age) < 100) and (15 <= int(max_age) < 100):
+                    async with state.proxy() as data:
+                        data['age'] = msg.text
+                    await update_filter_age_min(user_id, int(min_age))
+                    await update_filter_age_max(user_id, int(max_age))
+                    await state.finish()
+                    await bot.send_message(
+                        msg.from_user.id, 
+                        'Возраст успешно обновлен!',
+                    )
+                    await filter(msg)
+                else:
+                    await bot.send_message(
+                        msg.from_user.id,
+                        'Пожалуйста, введите корректный возраст, от 15 лет'
+                    )
+                    return
+            else:
+                await bot.send_message(
+                    msg.from_user.id,
+                    'Вы ввели возраст в неправильно формате, ведите возраст в формате:\n\n"нижняя граница" - "верхняя граница"\nНапример 18-20\n\nЕсли вы хотите определенный возраст, отправьте просто одно число)'
+                )
+                return
+        except Exception as e:
+            print(e)
+            await bot.send_message(
+                    msg.from_user.id,
+                    'Вы ввели возраст в неправильно формате, ведите возраст в формате:\n\n"нижняя граница" - "верхняя граница"\nНапример 18-20\n\nЕсли вы хотите определенный возраст, отправьте просто одно число)'
+                )
+            return
+
+
+@dp.callback_query_handler(lambda c: c.data == 'filter_age_all', state=Filter_age.age)
+async def filter_age_all(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    await state.finish()
+    await update_filter_age_max(user_id, 0)
+    await update_filter_age_min(user_id, 0)
+    await bot.send_message(
+            callback_query.from_user.id, 
+            'Возраст успешно обновлен!',
+        )
+    await filter(callback_query) 
+
+@dp.callback_query_handler(lambda c: c.data == 'filter_age_cancle', state=Filter_age.age)
+async def filter_age_cancel(callback_query: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Действие отменено'
+    )
+    await filter(callback_query)
+
+
+
+@dp.message_handler(Text('Уч. заведение'))
+async def update_filter_university(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id,
+        'Выберете учебное заведение)',
+        reply_markup=await select_university(is_filter=True)
+    )
+
+    await Filter_university.university.set()
+
+
+@dp.callback_query_handler(lambda c: 'filter_university' in c.data, state=Filter_university.university)
+async def state_filter_university(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    university = callback_query.data.split(':')[1]
+    await callback_query.message.delete()
+    await update_filter_university_db(user_id, university)
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Учебное заведение успешно обновлено!'
+    )
+    await state.finish()
+    await filter(callback_query)
+
+@dp.message_handler(Text('Курс'))
+async def update_filter_course(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id,
+        'Введите курс обучения!',
+        reply_markup=filter_cource_age_kb(),
+    )
+    await Filter_course.cource.set()
+
+@dp.callback_query_handler(lambda c: c.data == 'filter_cource_cancle', state=Filter_course.cource)
+async def filter_age_cancel(callback_query: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Действие отменено'
+    )
+    await filter(callback_query)
+
+@dp.message_handler(state=Filter_course.cource)
+async def state_filter_cource(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
+    if msg.text.isdigit() and 1 <= int(msg.text) <= 5:
+        async with state.proxy() as data:
+            data['course'] = msg.text
+        await update_filter_cource(user_id, int(data["course"]))
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Курс обучения успешно обновлен',
+        )
+        await filter(msg)
+    else:
+        await bot.send_message(
+                msg.from_user.id, 
+                'Пожалуйста, введите корректный номер курса'
+            )
+        return
+    
+
+@dp.callback_query_handler(lambda c: c.data == 'filter_cource_all', state=Filter_course.cource)
+async def filter_course_all(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    await state.finish()
+    await update_filter_cource(user_id, 0)
+    await bot.send_message(
+            callback_query.from_user.id,
+            'Курс обучения успешно обновлен',
+        )
+    await filter(callback_query)
+
+
+
+@dp.message_handler(Text('Форма обучения'))
+async def update_filter_education(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id,
+        'Выберете форму обучения',
+        reply_markup=select_education(is_filter=True)
+    )
+
+@dp.callback_query_handler(lambda c: 'filter_education' in c.data)
+async def state_filter_education(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    education = callback_query.data.split(':')[1]
+    await update_filter_education_db(user_id, education)
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Форма обучения успешно обновлена'
+    )
+    await filter(callback_query)
+    
+
+    
 
 
 

@@ -1,4 +1,3 @@
-import json
 from aiogram.types import (
     InlineKeyboardMarkup, 
     ReplyKeyboardMarkup, 
@@ -19,25 +18,42 @@ def select_search():
     keyboard = InlineKeyboardMarkup().add(btn1, btn2)
     return keyboard
 
-def select_education():
-    btn1 = InlineKeyboardButton(text='СПО', callback_data='register_education:spo')
-    btn2 = InlineKeyboardButton(text='Бакалавриат', callback_data='register_education:bakalavriat')
-    btn3 = InlineKeyboardButton(text='Специалитет', callback_data='register_education:specialitet')
-    btn4 = InlineKeyboardButton(text='Магистратура', callback_data='register_education:magistratura')
+def select_education(is_filter=False):
+    if not is_filter:
+        btn1 = InlineKeyboardButton(text='СПО', callback_data='register_education:spo')
+        btn2 = InlineKeyboardButton(text='Бакалавриат', callback_data='register_education:bakalavriat')
+        btn3 = InlineKeyboardButton(text='Специалитет', callback_data='register_education:specialitet')
+        btn4 = InlineKeyboardButton(text='Магистратура', callback_data='register_education:magistratura')
+        keyboard = InlineKeyboardMarkup().add(btn1, btn2).add(btn3, btn4)
 
-    keyboard = InlineKeyboardMarkup().add(btn1, btn2).add(btn3, btn4)
+    elif is_filter:
+        btn1 = InlineKeyboardButton(text='СПО', callback_data='filter_education:spo')
+        btn2 = InlineKeyboardButton(text='Бакалавриат', callback_data='filter_education:bakalavriat')
+        btn3 = InlineKeyboardButton(text='Специалитет', callback_data='filter_education:specialitet')
+        btn4 = InlineKeyboardButton(text='Магистратура', callback_data='filter_education:magistratura')
+        btn5 = InlineKeyboardButton(text='Любая', callback_data='filter_education:all')
+        keyboard = InlineKeyboardMarkup().add(btn1, btn2).add(btn3, btn4).add(btn5)
     return keyboard
 
-async def select_university():
+async def select_university(is_filter=False):
     universities = await read_university()
 
     keyboard = InlineKeyboardMarkup()
 
-    for university in universities:
-        btn = InlineKeyboardButton(text=university, callback_data=f'register_university:{university}')
-        keyboard.add(btn)
-
-    return keyboard
+    if not is_filter:
+        for university in universities:
+            if university != 'all':
+                btn = InlineKeyboardButton(text=university, callback_data=f'register_university:{university}')
+                keyboard.add(btn)
+        return keyboard
+    elif is_filter:
+        for university in universities:
+            if university != 'all':
+                btn = InlineKeyboardButton(text=university, callback_data=f'filter_university:{university}')
+                keyboard.add(btn)
+        btn_all = InlineKeyboardButton(text='Все', callback_data='filter_university:all')
+        keyboard.add(btn_all)
+        return keyboard
 
 def end_registration_kb(file_id):
     
@@ -55,7 +71,7 @@ def menu_kb():
 
 def reg_menu():
     btn1 = KeyboardButton(text='Главное меню')
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn1)
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).row(btn1)
     return keyboard
 
 def my_profile_kb():
@@ -81,5 +97,25 @@ def like_kb():
     btn1 = KeyboardButton('💜')
     btn2 = KeyboardButton('👎🏻')
     btn4 = KeyboardButton('❗️')
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn1, btn4, btn2)
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).row(btn1, btn4, btn2)
+    return keyboard
+
+
+def filters_main_kb():
+    btn1 = KeyboardButton('Возраст')
+    btn2 = KeyboardButton('Уч. заведение')
+    btn3 = KeyboardButton('Курс')
+    btn4 = KeyboardButton('Форма обучения')
+    btn5 = KeyboardButton('Вернуться назад')
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).row(btn1, btn2).row(btn3, btn4).row(btn5)
+    return keyboard
+
+def filter_cource_age_kb(is_filter_age=False):
+    if not is_filter_age:
+        btn1 = InlineKeyboardButton(text='Любой курс', callback_data='filter_cource_all')
+        btn2 = InlineKeyboardButton(text='Отмена', callback_data='filter_cource_cancle')
+    elif is_filter_age:
+        btn1 = InlineKeyboardButton(text='Любой возраст', callback_data='filter_age_all')
+        btn2 = InlineKeyboardButton(text='Отмена', callback_data='filter_age_cancle')
+    keyboard = InlineKeyboardMarkup().add(btn1).add(btn2)
     return keyboard

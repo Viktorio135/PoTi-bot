@@ -6,6 +6,8 @@ from dataBase.models import User, University
 from datetime import date
 from sqlalchemy.orm import Session
 from asgiref.sync import sync_to_async
+from sqlalchemy.ext.asyncio import AsyncSession
+
 
 @sync_to_async
 def create_user(
@@ -39,12 +41,14 @@ def create_user(
                 course=course, 
                 education=education, 
                 is_blocked=False,
-                registration_date=date.today()
+                registration_date=date.today(),
                 )
             session.add(new_user)
             session.commit()
             return 1
-    except:
+    except Exception as e:
+        print(e)
+
         return 0
     
 @sync_to_async
@@ -75,13 +79,60 @@ def update_active_to_false(user_id):
         return 1
 
 @sync_to_async
+def update_filter_age_min(user_id, age):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.min_age = age
+        session.commit()
+        return 1
+
+@sync_to_async
+def update_filter_age_max(user_id, age):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.max_age = age
+        session.commit()
+        return 1
+    
+
+async def update_filter_university_db(user_id, university):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        if university == 'all':
+            obj.to_university = 3
+            session.commit()
+            return 1
+        else:
+            university_id = await get_university_id_by_name(university)
+            obj.to_university = university_id
+            session.commit()
+            return 1
+
+@sync_to_async
+def update_filter_cource(user_id, to_cource):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.to_course = to_cource
+        session.commit()
+        return 1
+
+@sync_to_async
+def update_filter_education_db(user_id, to_education):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.to_education = to_education
+        session.commit()
+        return 1
+
+
+@sync_to_async
 def get_list_of_profiles(user_id):
     with Session(autoflush=False, bind=engine) as session:
         obj = session.query(User).filter(User.user_id == user_id).first()
         list_of_profiles = []
         whom = obj.search_to
         users = session.query(User).filter(User.is_active == True).all()
-        if users != None:
+        if users is not None:
             
             for user in users:
                 if user.sex == whom:
@@ -131,7 +182,10 @@ def get_university_id_by_name(university):
 def get_university_name_by_id(un_id):
     with Session(autoflush=False, bind=engine) as session:
         obj = session.query(University).filter(University.id==un_id).first()
-    return obj.name
+    if obj.name == 'all':
+        return 'Все'
+    else:
+        return obj.name
 
 
 async def get_user_by_id(user_id, Anketa=False):
@@ -151,7 +205,12 @@ async def get_user_by_id(user_id, Anketa=False):
                     "speciality": obj.speciality,
                     "course": obj.course,
                     "education": obj.education,
-                    "user_name": obj.user_name
+                    "user_name": obj.user_name,
+                    "to_university": obj.to_university,
+                    "to_education": obj.to_education,
+                    "to_course": obj.to_course,
+                    "max_age": obj.max_age,
+                    "min_age": obj.min_age,
                 }
                 if not Anketa:
                     return data

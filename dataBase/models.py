@@ -31,12 +31,18 @@ class User(Base):
     user_id = Column(String(100))
     is_active = Column(Boolean)
     photos = Column(String(500))
-    university = Column(Integer, ForeignKey('university.id'))  # Изменено на 'university.id'
+    university = Column(Integer, ForeignKey('university.id'))
     speciality = Column(String(1000))
     course = Column(Integer)
     education = Column(String(100))
     is_blocked = Column(Boolean)
     registration_date = Column(DateTime(), default=datetime.now)
+    to_education = Column(String(100), default='all')
+    to_university = Column(Integer, ForeignKey('university.id'), default=3)
+    to_course = Column(Integer, default=0)
+    max_age = Column(Integer, default=0)
+    min_age = Column(Integer, default=0)
+
 
 class University(Base):
     __tablename__ = 'university'
