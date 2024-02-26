@@ -66,7 +66,8 @@ def menu_kb():
     btn1 = KeyboardButton(text='Моя анкета')
     btn2 = KeyboardButton(text='Cмотреть анкеты')
     btn3 = KeyboardButton(text='Фильтр')
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn2).row(btn1, btn3)
+    btn4 = KeyboardButton(text='Последняя активность')
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn2).row(btn1, btn4, btn3)
     return keyboard
 
 def reg_menu():
@@ -118,4 +119,24 @@ def filter_cource_age_kb(is_filter_age=False):
         btn1 = InlineKeyboardButton(text='Любой возраст', callback_data='filter_age_all')
         btn2 = InlineKeyboardButton(text='Отмена', callback_data='filter_age_cancle')
     keyboard = InlineKeyboardMarkup().add(btn1).add(btn2)
+    return keyboard
+
+def history_dislike_kb(has_nexn, has_last, page):
+    keyboard = InlineKeyboardMarkup()
+    if has_nexn and has_last:
+        btn1 = InlineKeyboardButton(text='❤️', callback_data=f'history_like:{page}')
+        btn2 = InlineKeyboardButton(text='👉', callback_data=f'history_dislike_next:{page}')
+        btn3 = InlineKeyboardButton(text='👈', callback_data=f'history_dislike_last:{page}')
+        keyboard.add(btn3, btn1, btn2)
+    elif has_nexn and not has_last:
+        btn1 = InlineKeyboardButton(text='❤️', callback_data=f'history_like:{page}')
+        btn2 = InlineKeyboardButton(text='👉', callback_data=f'history_dislike_next:{page}')
+        keyboard.add(btn1, btn2)
+    elif not has_nexn and has_last:
+        btn1 = InlineKeyboardButton(text='❤️', callback_data=f'history_like:{page}')
+        btn2 = InlineKeyboardButton(text='👈', callback_data=f'history_dislike_last:{page}')
+        keyboard.add(btn2, btn1)
+    else:
+        btn1 = InlineKeyboardButton(text='❤️', callback_data=f'history_like:{page}')
+        keyboard.add(btn1)
     return keyboard

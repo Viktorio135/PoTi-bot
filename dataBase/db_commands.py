@@ -126,12 +126,30 @@ def update_filter_education_db(user_id, to_education):
 
 
 @sync_to_async
-def get_list_of_profiles(user_id):
+def get_list_of_profiles(
+    user_id,
+    to_education,
+    to_university,
+    to_course,
+    max_age,
+    min_age
+    ):
     with Session(autoflush=False, bind=engine) as session:
         obj = session.query(User).filter(User.user_id == user_id).first()
         list_of_profiles = []
         whom = obj.search_to
-        users = session.query(User).filter(User.is_active == True).all()
+        users = session.query(User).filter(User.is_active == True)
+        if to_education != 'all':
+            users = users.filter(User.education == to_education)
+        if to_university != 3:
+            users = users.filter(User.university == to_university)
+        if to_course != 0:
+            users = users.filter(User.course == to_course)
+        if max_age != 0:
+            users = users.filter(User.age <= max_age)
+        if min_age != 0:
+            users = users.filter(User.age >= min_age)
+        users = users.all()
         if users is not None:
             
             for user in users:

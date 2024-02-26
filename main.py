@@ -36,6 +36,7 @@ from keyboards import (
     like_kb,
     filters_main_kb,
     filter_cource_age_kb,
+    history_dislike_kb
 )
 from dataBase.dump import dump_dict
 from dataBase.models import start_db
@@ -60,7 +61,7 @@ dict_of_profiles = {}
 async def cmd_start(msg: types.Message):
     await bot.send_message(
             msg.from_user.id, 
-            'Привет, ты попал в ... Мы поможем тебе кого-нибудь найти.'
+            'Привет, ты попал в ... Мы поможем тебе найти кого-нибудь найти.'
             )
     if await has_register(str(msg.from_user.id)):
         await menu(msg)
@@ -378,10 +379,77 @@ async def repeat_profile(callback_query: types.CallbackQuery):
 async def disable_active(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     await update_active_to_false(user_id)
+    for user in dict_of_profiles.copy():
+        if user_id in user["profiles_list"]:
+            user["profiles_list"].remove(user_id)
     await bot.send_message(
         callback_query.from_user.id,
         'Мы отключили вашу анкету, надеюсь вы кого-нибудь нашли)'
     )
+
+@dp.message_handler(Text('Последняя активность'))
+async def last_activity(msg: types.Message, page=0):
+    user_id = str(msg.from_user.id)
+    if user_id in dict_of_profiles:
+        if len(dict_of_profiles[user_id]["history_dislike"]) != 0 :
+            list_history_profiles = dict_of_profiles[user_id]["history_dislike"]
+            last_profile_id = list_history_profiles[int(page)]
+            last_profile = await get_user_by_id(last_profile_id, Anketa=True)
+            if len(list_history_profiles) != 1:
+                next_button = True if last_profile_id != list_history_profiles[-1] else False
+                last_button = True if last_profile_id != list_history_profiles[0] else False
+            elif len(list_history_profiles) == 1:
+                next_button = False
+                last_button = False
+            await bot.send_photo(
+                msg.from_user.id,
+                open(f'static/users_photo/{last_profile_id}.jpg', 'rb'),
+                last_profile,
+                reply_markup=history_dislike_kb(has_nexn=next_button, has_last=last_button, page=page)
+            )
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Никакой активности нет'
+            )
+            await menu(msg)
+    else:
+        await bot.send_message(
+                msg.from_user.id,
+                'Никакой активности нет'
+            )
+        await menu(msg)
+
+@dp.callback_query_handler(lambda c: 'history_like' in c.data)
+async def like_history_dislike(callback_query: types.CallbackQuery):
+    page = callback_query.data.split(':')[1]
+    print('заход')
+    user_id = str(callback_query.from_user.id)
+    whom = dict_of_profiles[user_id]["history_dislike"][int(page)]
+    dict_of_profiles[whom]["who_like"].append(user_id)
+    who_len = len(dict_of_profiles[whom]["who_like"])
+    await bot.send_message(
+        whom,
+        'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
+        reply_markup=show_like_kb()
+    )
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Сердечко успешно отправлено)))',
+    )
+
+@dp.callback_query_handler(lambda c: 'history_dislike_next' in c.data)
+async def next_history_dislike(callback_query: types.CallbackQuery):
+    page = callback_query.data.split(':')[1]
+    await callback_query.message.delete()
+    await last_activity(callback_query, page=int(page)+1)
+
+@dp.callback_query_handler(lambda c: 'history_dislike_last' in c.data)
+async def next_history_dislike(callback_query: types.CallbackQuery):
+    page = callback_query.data.split(':')[1]
+    await callback_query.message.delete()
+    await last_activity(callback_query, page=int(page)-1)
+
 ########################################################################################
     
 ################################### Смотреть анкеты ######################################
@@ -390,20 +458,35 @@ async def disable_active(callback_query: types.CallbackQuery):
 async def search_love_reg(msg: types.Message):
     user_id = str(msg.from_user.id)
     await update_active_to_true(user_id)
+    data = await get_user_by_id(user_id)
     if user_id not in dict_of_profiles:
-        list_of_profiles = await get_list_of_profiles(user_id)
+        list_of_profiles = await get_list_of_profiles(
+            user_id,
+            data["to_education"],
+            data["to_university"],
+            data["to_course"],
+            data["max_age"],
+            data["min_age"],
+            )
         dict_of_profiles[user_id] = {
                 "profiles_list": list_of_profiles,
                 "last_activity": str(datetime.now()),
                 "like": [],
-                "dislike": [],
+                "history_dislike": [],
                 "who_like": [],
             }
         
         await search_love_step1(msg)
     else:
         if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
-            list_of_profiles = await get_list_of_profiles(user_id)
+            list_of_profiles = await get_list_of_profiles(
+                user_id,
+                data["to_education"],
+                data["to_university"],
+                data["to_course"],
+                data["max_age"],
+                data["min_age"],
+                )
             if len(list_of_profiles) != 0:
                 dict_of_profiles[user_id]["profiles_list"] = list_of_profiles
                 await search_love_step1(msg)
@@ -415,7 +498,27 @@ async def search_love_reg(msg: types.Message):
         else:
             await search_love_step1(msg)
 
-    
+async def update_list_of_profiles_with_new_filters(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    data = await get_user_by_id(user_id)
+    list_of_profiles = await get_list_of_profiles(
+            user_id,
+            data["to_education"],
+            data["to_university"],
+            data["to_course"],
+            data["max_age"],
+            data["min_age"],
+            )
+    if user_id in dict_of_profiles:
+        dict_of_profiles[user_id]["profiles_list"] = list_of_profiles
+    else:
+        dict_of_profiles[user_id] = {
+                "profiles_list": list_of_profiles,
+                "last_activity": str(datetime.now()),
+                "like": [],
+                "history_dislike": [],
+                "who_like": [],
+            }
 
 
 async def search_love_step1(msg: types.Message):
@@ -449,7 +552,7 @@ async def like_main(msg: types.Message):
     list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
     like = list_of_profiles[-1]
     dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
-    liked_profile = await get_user_by_id(user_id, Anketa=True)
+    
     who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
     dict_of_profiles[user_id]["profiles_list"].pop()
     await bot.send_message(
@@ -467,12 +570,17 @@ async def like_main(msg: types.Message):
 
 @dp.message_handler(Text('👎'))
 async def dislike_main(msg: types.Message):
-    dict_of_profiles[str(msg.from_user.id)]["profiles_list"].pop()
+    user_id = str(msg.from_user.id)
+    if len(dict_of_profiles[user_id]["history_dislike"]) == 5:
+        dict_of_profiles[user_id]["history_dislike"].pop(0)
+    if dict_of_profiles[user_id]["profiles_list"][-1] not in dict_of_profiles[user_id]["history_dislike"]:
+        dict_of_profiles[user_id]["history_dislike"].append(dict_of_profiles[user_id]["profiles_list"][-1])
+    dict_of_profiles[user_id]["profiles_list"].pop()
     await search_love_step1(msg)
+
 
 @dp.message_handler(Text('💤'))
 async def sleep_main(msg: types.Message):
-    dict_of_profiles[str(msg.from_user.id)]["profiles_list"].pop()
     await menu(msg)
 
 
@@ -523,9 +631,9 @@ async def dislike_liked(msg: types.Message):
         )
         await search_love_step1(msg)
 
-########################################################################################
+############################################################################################################################
         
-################################### Фильтры ########################################################
+################################### Фильтры ##########################################################################
         
 @dp.message_handler(Text('Фильтр'))
 async def filter(msg: types.Message):
@@ -577,6 +685,7 @@ async def state_filter_age(msg: types.Message, state: FSMContext):
             await update_filter_age_max(user_id, int(data["age"]))
             await update_filter_age_min(user_id, int(data["age"]))
             await state.finish()
+            await update_list_of_profiles_with_new_filters(msg)
             await bot.send_message(
                 msg.from_user.id,
                 'Возраст успешно обновлен!'
@@ -601,6 +710,7 @@ async def state_filter_age(msg: types.Message, state: FSMContext):
                     await update_filter_age_min(user_id, int(min_age))
                     await update_filter_age_max(user_id, int(max_age))
                     await state.finish()
+                    await update_list_of_profiles_with_new_filters(msg)
                     await bot.send_message(
                         msg.from_user.id, 
                         'Возраст успешно обновлен!',
@@ -633,6 +743,7 @@ async def filter_age_all(callback_query: types.CallbackQuery, state: FSMContext)
     await state.finish()
     await update_filter_age_max(user_id, 0)
     await update_filter_age_min(user_id, 0)
+    await update_list_of_profiles_with_new_filters(callback_query)
     await bot.send_message(
             callback_query.from_user.id, 
             'Возраст успешно обновлен!',
@@ -667,6 +778,7 @@ async def state_filter_university(callback_query: types.CallbackQuery, state: FS
     university = callback_query.data.split(':')[1]
     await callback_query.message.delete()
     await update_filter_university_db(user_id, university)
+    await update_list_of_profiles_with_new_filters(callback_query)
     await bot.send_message(
         callback_query.from_user.id,
         'Учебное заведение успешно обновлено!'
@@ -700,6 +812,7 @@ async def state_filter_cource(msg: types.Message, state: FSMContext):
             data['course'] = msg.text
         await update_filter_cource(user_id, int(data["course"]))
         await state.finish()
+        await update_list_of_profiles_with_new_filters(msg)
         await bot.send_message(
             msg.from_user.id,
             'Курс обучения успешно обновлен',
@@ -718,6 +831,7 @@ async def filter_course_all(callback_query: types.CallbackQuery, state: FSMConte
     user_id = str(callback_query.from_user.id)
     await state.finish()
     await update_filter_cource(user_id, 0)
+    await update_list_of_profiles_with_new_filters(callback_query)
     await bot.send_message(
             callback_query.from_user.id,
             'Курс обучения успешно обновлен',
@@ -739,6 +853,7 @@ async def state_filter_education(callback_query: types.CallbackQuery):
     user_id = str(callback_query.from_user.id)
     education = callback_query.data.split(':')[1]
     await update_filter_education_db(user_id, education)
+    await update_list_of_profiles_with_new_filters(callback_query)
     await bot.send_message(
         callback_query.from_user.id,
         'Форма обучения успешно обновлена'
