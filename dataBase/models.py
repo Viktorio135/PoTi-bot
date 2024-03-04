@@ -26,7 +26,7 @@ class User(Base):
     sex = Column(String(10))
     search_to = Column(String(10))
     age = Column(Integer)
-    description = Column(Text(1000))
+    description = Column(Text(2000))
     user_name = Column(String(100))
     user_id = Column(String(100))
     is_active = Column(Boolean)
@@ -48,7 +48,7 @@ class University(Base):
     __tablename__ = 'university'
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(500))  # Добавлен index
+    name = Column(String(500))
 
 
 def start_db():

@@ -7,44 +7,27 @@ from aiogram.dispatcher.filters import Text
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 from dataBase.db_commands import (
-    create_user, 
-    has_register, 
-    get_university_id_by_name, 
-    get_university_name_by_id,
-    get_user_by_id,
-    delete_profile, 
-    get_list_of_profiles,
-    update_active_to_true,
-    update_active_to_false,
-    update_filter_age_max,
-    update_filter_age_min,
-    update_filter_university_db,
-    update_filter_cource,
-    update_filter_education_db
+    create_user, has_register, get_university_id_by_name, 
+    get_university_name_by_id, get_user_by_id, delete_profile, 
+    get_list_of_profiles, update_active_to_true, update_active_to_false,
+    update_filter_age_max, update_filter_age_min, update_filter_university_db,
+    update_filter_cource, update_filter_education_db, change_description_by_id,
+    change_age_by_id,
 )
 from keyboards import (
-    select_sex, 
-    select_university, 
-    select_education, 
-    end_registration_kb, 
-    menu_kb,
-    reg_menu,
-    my_profile_kb,
-    select_search,
-    search_kb,
-    show_like_kb,
-    like_kb,
-    filters_main_kb,
-    filter_cource_age_kb,
-    history_dislike_kb
+    select_sex, select_university, select_education, 
+    end_registration_kb, menu_kb, reg_menu,
+    my_profile_kb, select_search, search_kb,
+    show_like_kb, like_kb, filters_main_kb,
+    filter_cource_age_kb, history_dislike_kb, report_kb, 
+    change_profile_kb
 )
 from dataBase.dump import dump_dict
 from dataBase.models import start_db
 from states.user_states import (
-    Register_new_user, 
-    Filter_age, 
-    Filter_university, 
-    Filter_course,
+    Register_new_user, Filter_age, Filter_university, 
+    Filter_course, Change_age, Change_description, 
+    Change_photo
 )
 
 
@@ -74,13 +57,13 @@ async def register_or_update_user(msg: types.Message, is_new=False):
     if not is_new:
         await bot.send_message(
                 msg.from_user.id, 
-                'Для начала, давай создадим аккаунт!\nКак тебя зовут?'
+                'Для начала, давай создадим аккаунт!\nНапишите мне ваше имя, которое будут все видеть в анкете?'
                 )
         await Register_new_user.name.set()
     else:
         await bot.send_message(
                 msg.from_user.id, 
-                'Давай создадим анкету заново.\nКак тебя зовут?'
+                'Давай создадим анкету заново.\nНапишите мне ваше имя, которое будут все видеть в анкете?'
                 )
         await Register_new_user.name.set()
          
@@ -140,7 +123,7 @@ async def register_age(msg: types.Message, state: FSMContext):
 
             await bot.send_message(
                 msg.from_user.id, 
-                'Хорошо, теперь придумая описание профиля, если хочешь, чтобы описание было пустым, отправь просто 0'
+                'Хорошо, теперь придумая описание профиля'
                 )
 
             await Register_new_user.next()
@@ -157,7 +140,7 @@ async def register_description(msg: types.Message, state: FSMContext):
                 data['description'] = '' if msg.text == '0' else msg.text
     await bot.send_message(
         msg.from_user.id, 
-        'Отлично, давай теперь определимся с учебным заведением!',
+        'Давай теперь определимся с учебным заведением!',
         reply_markup=await select_university() 
     )
     await Register_new_user.next()
@@ -195,7 +178,7 @@ async def register_speciality(msg: types.Message, state: FSMContext):
         data['speciality'] = msg.text
     await bot.send_message(
          msg.from_user.id, 
-         'На каком курсе ты учишься?'
+         'На каком курсе ты проходишь обучение?'
     )
     await Register_new_user.next()
 
@@ -207,7 +190,7 @@ async def register_course(msg: types.Message, state: FSMContext):
 
             await bot.send_message(
                 msg.from_user.id, 
-                'Отправь одну фотографию!'
+                'И напоследок, Пришлите мне вашу фотографию!'
                 )
 
             await Register_new_user.next()
@@ -237,7 +220,6 @@ async def register_description(msg: types.Message, state: FSMContext):
         await end_registration(msg, data)
         await state.finish()
     except Exception as error:    
-        print(error)
         await bot.send_message(
             msg.from_user.id, 
             'Произошла ошибка сохранения, попробуйте снова'
@@ -327,8 +309,8 @@ async def repeat_reg(callback_query: types.CallbackQuery):
 ##########################################################################################
 
 #################################### Главное меню #####################################
-@dp.message_handler(Text('Вернуться назад'))
-@dp.message_handler(Text('Главное меню'))
+@dp.message_handler(Text('⏪️ Назад'))
+@dp.message_handler(Text('Меню'))
 @dp.message_handler(commands='menu')
 async def menu(msg: types.Message):
     try:
@@ -352,7 +334,11 @@ async def menu(msg: types.Message):
                 f'Ошибка базы данных: {e}',
             )
         
-@dp.message_handler(Text('Моя анкета'))
+
+############# Анкета #############
+
+
+@dp.message_handler(Text('👤 Моя анекта'))
 async def my_profile(msg: types.Message):
      
     await bot.send_message(
@@ -374,6 +360,105 @@ async def my_profile(msg: types.Message):
 async def repeat_profile(callback_query: types.CallbackQuery):
     await delete_profile(callback_query.message.chat.id)
     await register_or_update_user(callback_query, is_new=True)
+
+
+@dp.callback_query_handler(lambda c: c.data == 'change_profile')
+async def change_profile(callback_query: types.CallbackQuery):
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Что вы хотите изменить?',
+        reply_markup=change_profile_kb()
+    )
+
+@dp.callback_query_handler(lambda c: 'change_ask' in c.data)
+async def change_ask(callback_query: types.CallbackQuery):
+    change = callback_query.data.split(':')[1]
+    match change:
+        case 'photo':
+            await callback_query.message.delete()
+            await Change_photo.photo.set()
+            await bot.send_message(
+                callback_query.from_user.id, 
+                'Отправьте фотографию'
+            )
+        case 'description':
+            await callback_query.message.delete()
+            await Change_description.description.set()
+            await bot.send_message(
+                callback_query.from_user.id, 
+                'Расскажите о себе'
+            )
+        # case 'age':
+        #     await callback_query.message.delete()
+        #     await Change_age.age.set()
+        #     await bot.send_message(
+        #         callback_query.from_user.id, 
+        #         'Сколько тебе лет?'
+        #     )
+        
+@dp.message_handler(content_types=['photo'], state=Change_photo.photo)
+async def state_change_photo(msg: types.Message, state: FSMContext):
+    try:
+        usere_id = msg.from_user.id
+        file_name = f'{usere_id}.jpg'
+        path = f'static/users_photo/{file_name}'
+        async with state.proxy() as data:
+                data['photo'] = path
+        await msg.photo[-1].download(path)
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id, 
+            'Фотография успешно добавлена'
+            )
+        await my_profile(msg)
+    except Exception as e:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Произошла ошибка, попробуйте отправить фотографию еще раз...'
+        )
+        return
+    
+@dp.message_handler(state=Change_description.description)
+async def state_change_description(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
+    async with state.proxy() as data:
+        data["description"] = msg.text
+    await change_description_by_id(user_id, data["description"])
+    await state.finish()
+    await bot.send_message(
+        msg.from_user.id, 
+        'Описание профиля успешно обновлено'
+    )
+    await my_profile(msg)
+
+
+# @dp.message_handler(state=Change_age.age)
+# async def state_change_age(msg: types.Message, state: FSMContext):
+#     user_id = str(msg.from_user.id)
+#     if msg.text.isdigit() and 15 <= int(msg.text) < 100:
+#             async with state.proxy() as data:
+#                 data['age'] = msg.text
+#             await change_age_by_id(user_id, int(data["age"]))
+#             await bot.send_message(
+#                 msg.from_user.id, 
+#                 'Ваш возраст успешно обновлен'
+#                 )
+
+#             await state.finish()
+#             await my_profile(msg)
+#     else:
+#         await bot.send_message(
+#                 msg.from_user.id, 
+#                 'Пожалуйста, введите корректный возраст, от 15 лет'
+#             )
+#         return
+
+
+        
+
+
+
+
 
 @dp.callback_query_handler(lambda c: c.data == 'disable_active')
 async def disable_active(callback_query: types.CallbackQuery):
@@ -454,7 +539,7 @@ async def next_history_dislike(callback_query: types.CallbackQuery):
     
 ################################### Смотреть анкеты ######################################
     
-@dp.message_handler(Text('Cмотреть анкеты'))
+@dp.message_handler(Text('🚀 Cмотреть анкеты'))
 async def search_love_reg(msg: types.Message):
     user_id = str(msg.from_user.id)
     await update_active_to_true(user_id)
@@ -584,7 +669,7 @@ async def sleep_main(msg: types.Message):
     await menu(msg)
 
 
-@dp.message_handler(Text('Показать'))
+@dp.message_handler(Text('🚀 Показать'))
 async def show_like(msg: types.Message):
     who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
     profile = await get_user_by_id(who_like, Anketa=True)
@@ -631,11 +716,50 @@ async def dislike_liked(msg: types.Message):
         )
         await search_love_step1(msg)
 
+
+@dp.message_handler(Text('⚠️'))
+async def search_report(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id, 
+        'Укажите причину жалобы:',
+        reply_markup=report_kb()
+    )
+
+@dp.callback_query_handler(lambda c: 'report' in c.data)
+async def report_callback(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    report = callback_query.data.split(':')[1]
+    report_user_id = dict_of_profiles[user_id]["profiles_list"][-1] 
+    if report != 'cancel':
+        dict_of_profiles[user_id]["profiles_list"].pop()
+        match report:
+            case 'adults':
+                #жалоба с номером id админу
+                pass
+            case 'drugs':
+                #жалоба с номером id админу
+                pass
+            case 'scum':
+                #жалоба с номером id админу
+                pass
+            case 'other':
+                #жалоба с номером id админу
+                pass
+        await bot.send_message(
+            callback_query.from_user.id, 
+            'Жалоба успешно отправлена'
+        )     
+    await search_love_step1(callback_query)
+
+            
+
+
+
 ############################################################################################################################
         
 ################################### Фильтры ##########################################################################
         
-@dp.message_handler(Text('Фильтр'))
+@dp.message_handler(Text('⚙️ Фильтры'))
 async def filter(msg: types.Message):
     user_id = str(msg.from_user.id)
     data = await get_user_by_id(user_id)
@@ -862,11 +986,6 @@ async def state_filter_education(callback_query: types.CallbackQuery):
     
 
     
-
-
-
-
-
 
 
 

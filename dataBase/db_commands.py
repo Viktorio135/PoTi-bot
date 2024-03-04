@@ -6,7 +6,6 @@ from dataBase.models import User, University
 from datetime import date
 from sqlalchemy.orm import Session
 from asgiref.sync import sync_to_async
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @sync_to_async
@@ -206,6 +205,22 @@ def get_university_name_by_id(un_id):
         return obj.name
 
 
+@sync_to_async
+def change_description_by_id(user_id, text):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id==user_id).first()
+        obj.description = text
+        session.commit()
+        return 1
+
+@sync_to_async
+def change_age_by_id(user_id: str, age: int):
+    with Session(autoflush=False, bind=engine) as session:
+        obj = session.query(User).filter(User.user_id == user_id).first()
+        obj.age = age
+        session.commit()
+        return 1
+
 async def get_user_by_id(user_id, Anketa=False):
     with Session(autoflush=False, bind=engine) as session:
         obj = session.query(User).filter(User.user_id == user_id).first()
@@ -230,11 +245,28 @@ async def get_user_by_id(user_id, Anketa=False):
                     "max_age": obj.max_age,
                     "min_age": obj.min_age,
                 }
+
+                match data["education"]:
+                    case 'spo':
+                        data["education"] = 'СПО'
+                    case 'bakalavriat':
+                        data["education"] = 'Бакалавриат'
+                    case 'specialitet':
+                        data["education"] = 'Специалитет'
+                    case 'magistratura':
+                        data["education"] = 'Магистратура'
+
                 if not Anketa:
                     return data
                 elif Anketa:
                     university = await get_university_name_by_id(data["university"])
-                    return f'{data["name"]}, {data["age"]}, {university} - {data["speciality"]}({data["course"]} курс, {data["education"]})\n\n{data["description"]}'
+                    return f'\
+{data["name"]}, \
+{data["age"]}, \
+{university} - {data["speciality"]}\
+({data["course"]} курс, \
+{data["education"]})\n\n\
+{data["description"]}'
             except Exception as e:
                 print(e)
                 return 'Error'

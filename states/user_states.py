@@ -22,3 +22,18 @@ class Filter_university(StatesGroup):
 
 class Filter_course(StatesGroup):
     cource = State()
+
+
+################# Обновление профиля  #################
+
+class Change_photo(StatesGroup):
+    photo = State()
+
+class Change_description(StatesGroup):
+    description = State()
+
+class Change_age(StatesGroup):
+    age = State()
+
+#####################################
+
