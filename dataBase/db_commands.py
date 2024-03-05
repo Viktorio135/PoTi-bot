@@ -1,7 +1,7 @@
 import random
 
 from dataBase.models import engine
-from dataBase.models import User, University
+from dataBase.models import User, University, Admins
 
 from datetime import date
 from sqlalchemy.orm import Session
@@ -277,6 +277,30 @@ async def get_user_by_id(user_id, Anketa=False):
 
 
 
+
+
+############### admin ###############
+        
+@sync_to_async
+def get_list_of_admins():
+    with Session(autoflush=False, bind=engine) as session:
+        list_of_admins = []
+        admins = session.query(Admins).all()
+        for admin in admins:
+            list_of_admins.append(admin.user_id)
+        return list_of_admins
+            
+
+@sync_to_async
+def block_user_db(user_id):
+    try:
+        with Session(autoflush=False, bind=engine) as session:
+            obj = session.query(User).filter(User.user_id == user_id).first()
+            obj.is_blocked = True
+            session.commit()
+            return 1
+    except Exception as e:
+        return 0
         
 
     

@@ -12,7 +12,7 @@ from dataBase.db_commands import (
     get_list_of_profiles, update_active_to_true, update_active_to_false,
     update_filter_age_max, update_filter_age_min, update_filter_university_db,
     update_filter_cource, update_filter_education_db, change_description_by_id,
-    change_age_by_id,
+    change_age_by_id, get_list_of_admins, block_user_db
 )
 from keyboards import (
     select_sex, select_university, select_education, 
@@ -30,6 +30,9 @@ from states.user_states import (
     Change_photo
 )
 
+from states.admin_states import (
+    AdminDeleteUser
+)
 
 
 
@@ -985,7 +988,105 @@ async def state_filter_education(callback_query: types.CallbackQuery):
     await filter(callback_query)
     
 
+
+
+#########################################################################################################################
+
+##################################### Панель администратора ####################################################
     
+
+@dp.message_handler(commands='admin')
+async def login_admin(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Ты попал в админ панель, вот список команд:\n\
+"/block_user"\n\
+"/check_user"\n\
+"/unblock_user"\n\
+"/get_active_users"\n\
+"/total_users\n\
+"/spam"\n\
+"/get_user_by_photo"\n\
+'
+        )
+
+
+@dp.message_handler(commands=['block_user'])
+async def admin_block_user(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await AdminDeleteUser.user_id.set()
+        await bot.send_message(
+            msg.from_user.id, 
+            'Введите id пользователя, которого хотите заблокировать.\nЕсли вы хотите отменить действие, введите "Отмена"'
+        )
+
+@dp.message_handler(state=AdminDeleteUser.user_id)
+async def state_admin_block_user_step1(msg: types.Message, state: FSMContext):
+    if msg.text.lower() != 'отмена':
+        async with state.proxy() as data:
+            data["user_id"] = msg.text
+        await bot.send_message(
+            msg.from_user.id, 
+            'Введите причину блокировки, если вы хотите отменить действие, введите "отмена"'
+        )
+        await AdminDeleteUser.next()
+    else:
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+        
+@dp.message_handler(state=AdminDeleteUser.cause)
+async def state_admin_block_user_step2(msg: types.Message, state: FSMContext):
+    print('заход')
+    if msg.text.lower() != 'отмена':
+            async with state.proxy() as data:
+                data["cause"] = msg.text
+            await AdminDeleteUser.next()
+            await bot.send_message(
+                msg.from_user.id,
+                'Подтвердите действие, введите "Да/Нет"'
+            )
+    else:
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+
+@dp.message_handler(state=AdminDeleteUser.confirmation)
+async def state_admin_block_user_step3(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        block = await block_user_db(data["user_id"])
+        if block:
+            await bot.send_message(
+                msg.from_user.id, 
+                f'Пользователь {data["user_id"]} успешно заблокирован'
+            )
+            await bot.send_message(
+                data["user_id"],
+                f'Вы были заблокированы по причине:\n"{data["cause"]}"\nВы можете обратиться в поддержку и оспорить решение: @sliv_kursov_admin'
+            )
+        elif not block:
+            await bot.send_message(
+                msg.from_user.id, 
+                'Произошла ошибка, скорее всего пользователя с таким id не существует'
+            )
+    elif msg.text.lower() == 'нет':
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id, 
+            'Действие отменено'
+        )
+
 
 
 

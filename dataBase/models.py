@@ -50,6 +50,13 @@ class University(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(500))
 
+class Admins(Base):
+    __tablename__ = 'admins'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String(50))
+    is_main_admin = Column(Boolean(), default=False)
+
 
 def start_db():
     Base.metadata.create_all(bind=engine, checkfirst=True)
