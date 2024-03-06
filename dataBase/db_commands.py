@@ -137,7 +137,7 @@ def get_list_of_profiles(
         obj = session.query(User).filter(User.user_id == user_id).first()
         list_of_profiles = []
         whom = obj.search_to
-        users = session.query(User).filter(User.is_active == True)
+        users = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False)
         if to_education != 'all':
             users = users.filter(User.education == to_education)
         if to_university != 3:
@@ -244,6 +244,7 @@ async def get_user_by_id(user_id, Anketa=False):
                     "to_course": obj.to_course,
                     "max_age": obj.max_age,
                     "min_age": obj.min_age,
+                    "is_blocked": obj.is_blocked,
                 }
 
                 match data["education"]:
@@ -301,6 +302,31 @@ def block_user_db(user_id):
             return 1
     except Exception as e:
         return 0
+    
+@sync_to_async
+def unblock_user_db(user_id):
+    try:
+        with Session(autoflush=False, bind=engine) as session:
+            obj = session.query(User).filter(User.user_id == user_id).first()
+            obj.is_blocked = False
+            session.commit()
+            return 1
+    except Exception as e:
+        return 0
+
+@sync_to_async
+def get_statistic_user_db():
+    with Session(autoflush=False, bind=engine) as session:
+        users = session.query(User).all()
+        count_active = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False).all()
+    return len(users), len(count_active)
         
 
-    
+@sync_to_async
+def get_list_of_users_for_spam_db():
+    with Session(autoflush=False, bind=engine) as session:
+        users = []
+        objs = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False).all()
+        for user in objs:
+            users.append(user.user_id)
+    return users

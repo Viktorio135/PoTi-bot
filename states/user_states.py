@@ -37,3 +37,6 @@ class Change_age(StatesGroup):
 
 #####################################
 
+
+class ReportUserOther(StatesGroup):
+    cause = State()

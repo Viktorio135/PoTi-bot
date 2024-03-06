@@ -12,7 +12,8 @@ from dataBase.db_commands import (
     get_list_of_profiles, update_active_to_true, update_active_to_false,
     update_filter_age_max, update_filter_age_min, update_filter_university_db,
     update_filter_cource, update_filter_education_db, change_description_by_id,
-    change_age_by_id, get_list_of_admins, block_user_db
+    change_age_by_id, get_list_of_admins, block_user_db,
+    unblock_user_db, get_statistic_user_db, get_list_of_users_for_spam_db
 )
 from keyboards import (
     select_sex, select_university, select_education, 
@@ -27,12 +28,16 @@ from dataBase.models import start_db
 from states.user_states import (
     Register_new_user, Filter_age, Filter_university, 
     Filter_course, Change_age, Change_description, 
-    Change_photo
+    Change_photo, ReportUserOther
 )
 
 from states.admin_states import (
-    AdminDeleteUser
+    AdminBlockUser, AdminUnblockUser, AdminGetUserById,
+    AdminSpamHasPhoto, AdminSpamOnlyText, AdminSpamWithPhoto,
+    AdminGetUserByPhoto,
 )
+
+from utils.search_photo import compare_images
 
 
 
@@ -40,7 +45,6 @@ bot = Bot(token='6874586651:AAFeVAJ4fOIR_z2uWcG1Og5kaWOhkNCH3U0')
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 cached_data = {}
-
 dict_of_profiles = {}
 
 @dp.message_handler(commands='start')
@@ -343,21 +347,28 @@ async def menu(msg: types.Message):
 
 @dp.message_handler(Text('👤 Моя анекта'))
 async def my_profile(msg: types.Message):
-     
-    await bot.send_message(
-          msg.from_user.id,
-          'Ваша анкета выглядит вот так:'
-    )
+    user_id = str(msg.from_user.id)
+    is_blocked = await get_user_by_id(user_id)
+    if not is_blocked["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета выглядит вот так:'
+        )
+        user = await get_user_by_id(user_id, Anketa=True)
 
-    user = await get_user_by_id(msg.from_user.id, Anketa=True)
+        if user != 'User not found':
+            await bot.send_photo(
+                msg.from_user.id, 
+                open(f'static/users_photo/{msg.from_user.id}.jpg', 'rb'),
+                user,
+                reply_markup=my_profile_kb()
+            ) 
+    elif is_blocked["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
 
-    if user != 'User not found':
-        await bot.send_photo(
-            msg.from_user.id, 
-            open(f'static/users_photo/{msg.from_user.id}.jpg', 'rb'),
-            user,
-            reply_markup=my_profile_kb()
-        ) 
 
 @dp.callback_query_handler(lambda c: c.data == 'repeat_profile')
 async def repeat_profile(callback_query: types.CallbackQuery):
@@ -478,35 +489,42 @@ async def disable_active(callback_query: types.CallbackQuery):
 @dp.message_handler(Text('Последняя активность'))
 async def last_activity(msg: types.Message, page=0):
     user_id = str(msg.from_user.id)
-    if user_id in dict_of_profiles:
-        if len(dict_of_profiles[user_id]["history_dislike"]) != 0 :
-            list_history_profiles = dict_of_profiles[user_id]["history_dislike"]
-            last_profile_id = list_history_profiles[int(page)]
-            last_profile = await get_user_by_id(last_profile_id, Anketa=True)
-            if len(list_history_profiles) != 1:
-                next_button = True if last_profile_id != list_history_profiles[-1] else False
-                last_button = True if last_profile_id != list_history_profiles[0] else False
-            elif len(list_history_profiles) == 1:
-                next_button = False
-                last_button = False
-            await bot.send_photo(
-                msg.from_user.id,
-                open(f'static/users_photo/{last_profile_id}.jpg', 'rb'),
-                last_profile,
-                reply_markup=history_dislike_kb(has_nexn=next_button, has_last=last_button, page=page)
-            )
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        if user_id in dict_of_profiles:
+            if len(dict_of_profiles[user_id]["history_dislike"]) != 0 :
+                list_history_profiles = dict_of_profiles[user_id]["history_dislike"]
+                last_profile_id = list_history_profiles[int(page)]
+                last_profile = await get_user_by_id(last_profile_id, Anketa=True)
+                if len(list_history_profiles) != 1:
+                    next_button = True if last_profile_id != list_history_profiles[-1] else False
+                    last_button = True if last_profile_id != list_history_profiles[0] else False
+                elif len(list_history_profiles) == 1:
+                    next_button = False
+                    last_button = False
+                await bot.send_photo(
+                    msg.from_user.id,
+                    open(f'static/users_photo/{last_profile_id}.jpg', 'rb'),
+                    last_profile,
+                    reply_markup=history_dislike_kb(has_nexn=next_button, has_last=last_button, page=page)
+                )
+            else:
+                await bot.send_message(
+                    msg.from_user.id,
+                    'Никакой активности нет'
+                )
+                await menu(msg)
         else:
             await bot.send_message(
-                msg.from_user.id,
-                'Никакой активности нет'
-            )
+                    msg.from_user.id,
+                    'Никакой активности нет'
+                )
             await menu(msg)
-    else:
+    elif user['is_blocked']:
         await bot.send_message(
-                msg.from_user.id,
-                'Никакой активности нет'
-            )
-        await menu(msg)
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
 
 @dp.callback_query_handler(lambda c: 'history_like' in c.data)
 async def like_history_dislike(callback_query: types.CallbackQuery):
@@ -547,26 +565,8 @@ async def search_love_reg(msg: types.Message):
     user_id = str(msg.from_user.id)
     await update_active_to_true(user_id)
     data = await get_user_by_id(user_id)
-    if user_id not in dict_of_profiles:
-        list_of_profiles = await get_list_of_profiles(
-            user_id,
-            data["to_education"],
-            data["to_university"],
-            data["to_course"],
-            data["max_age"],
-            data["min_age"],
-            )
-        dict_of_profiles[user_id] = {
-                "profiles_list": list_of_profiles,
-                "last_activity": str(datetime.now()),
-                "like": [],
-                "history_dislike": [],
-                "who_like": [],
-            }
-        
-        await search_love_step1(msg)
-    else:
-        if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
+    if not data["is_blocked"]:
+        if user_id not in dict_of_profiles:
             list_of_profiles = await get_list_of_profiles(
                 user_id,
                 data["to_education"],
@@ -575,16 +575,40 @@ async def search_love_reg(msg: types.Message):
                 data["max_age"],
                 data["min_age"],
                 )
-            if len(list_of_profiles) != 0:
-                dict_of_profiles[user_id]["profiles_list"] = list_of_profiles
-                await search_love_step1(msg)
-            else:
-                await bot.send_message(
-                    msg.from_user.id,
-                    'Пользователи не найдены'
-                )
-        else:
+            dict_of_profiles[user_id] = {
+                    "profiles_list": list_of_profiles,
+                    "last_activity": str(datetime.now()),
+                    "like": [],
+                    "history_dislike": [],
+                    "who_like": [],
+                }
+            
             await search_love_step1(msg)
+        else:
+            if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
+                list_of_profiles = await get_list_of_profiles(
+                    user_id,
+                    data["to_education"],
+                    data["to_university"],
+                    data["to_course"],
+                    data["max_age"],
+                    data["min_age"],
+                    )
+                if len(list_of_profiles) != 0:
+                    dict_of_profiles[user_id]["profiles_list"] = list_of_profiles
+                    await search_love_step1(msg)
+                else:
+                    await bot.send_message(
+                        msg.from_user.id,
+                        'Пользователи не найдены'
+                    )
+            else:
+                await search_love_step1(msg)
+    elif data["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
 
 async def update_list_of_profiles_with_new_filters(msg: types.Message):
     user_id = str(msg.from_user.id)
@@ -637,34 +661,48 @@ async def search_love_step1(msg: types.Message):
 @dp.message_handler(Text('❤️'))
 async def like_main(msg: types.Message):
     user_id = str(msg.from_user.id)
-    list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
-    like = list_of_profiles[-1]
-    dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
+        like = list_of_profiles[-1]
+        dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
+        
+        who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
+        dict_of_profiles[user_id]["profiles_list"].pop()
+        await bot.send_message(
+            like,
+            'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
+            reply_markup=show_like_kb()
+        )
+
+        await bot.send_message(
+            msg.from_user.id,
+            'Сердечко успешно отправлено)))',
+        )
+
+        await search_love_step1(msg)
+    elif user["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
     
-    who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
-    dict_of_profiles[user_id]["profiles_list"].pop()
-    await bot.send_message(
-        like,
-        'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
-        reply_markup=show_like_kb()
-    )
-
-    await bot.send_message(
-        msg.from_user.id,
-        'Сердечко успешно отправлено)))',
-    )
-
-    await search_love_step1(msg)
-
 @dp.message_handler(Text('👎'))
 async def dislike_main(msg: types.Message):
     user_id = str(msg.from_user.id)
-    if len(dict_of_profiles[user_id]["history_dislike"]) == 5:
-        dict_of_profiles[user_id]["history_dislike"].pop(0)
-    if dict_of_profiles[user_id]["profiles_list"][-1] not in dict_of_profiles[user_id]["history_dislike"]:
-        dict_of_profiles[user_id]["history_dislike"].append(dict_of_profiles[user_id]["profiles_list"][-1])
-    dict_of_profiles[user_id]["profiles_list"].pop()
-    await search_love_step1(msg)
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        if len(dict_of_profiles[user_id]["history_dislike"]) == 5:
+            dict_of_profiles[user_id]["history_dislike"].pop(0)
+        if dict_of_profiles[user_id]["profiles_list"][-1] not in dict_of_profiles[user_id]["history_dislike"]:
+            dict_of_profiles[user_id]["history_dislike"].append(dict_of_profiles[user_id]["profiles_list"][-1])
+        dict_of_profiles[user_id]["profiles_list"].pop()
+        await search_love_step1(msg)
+    elif user["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
 
 
 @dp.message_handler(Text('💤'))
@@ -674,51 +712,75 @@ async def sleep_main(msg: types.Message):
 
 @dp.message_handler(Text('🚀 Показать'))
 async def show_like(msg: types.Message):
-    who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
-    profile = await get_user_by_id(who_like, Anketa=True)
-    await bot.send_photo(
-        msg.from_user.id,
-        open(f'static/users_photo/{who_like}.jpg', 'rb'),
-        profile,
-        reply_markup=like_kb()
-    )
+    user_id = str(msg.from_user.id)
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
+        profile = await get_user_by_id(who_like, Anketa=True)
+        await bot.send_photo(
+            msg.from_user.id,
+            open(f'static/users_photo/{who_like}.jpg', 'rb'),
+            profile,
+            reply_markup=like_kb()
+        )
+    elif user["is_blocked"]:
+        await bot.send_message(
+            msg.from_user.id,
+            'Ваша анкета была заблокирована'
+        )
+    
 
 @dp.message_handler(Text('💜'))
 async def like_liked(msg: types.Message):
-    who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"]
-    user = await get_user_by_id(who_like[-1])
-    user_like = await get_user_by_id(str(msg.from_user.id))
-    who_like_id = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
-    dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
-    await bot.send_message(
-        who_like_id,
-        f'У вас взаимная симпатия,\n Надеюсь что-то у вас выйдет()()()(): @{user_like["user_name"]} '
-    )
-    await bot.send_message(
-        msg.from_user.id, 
-        f'Надеюсь что-то у вас выйдет()()()(): @{user["user_name"]}'
-    )
-    if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
-        await show_like(msg)
-    else:
+    user_id = str(msg.from_user.id)
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"]
+        user = await get_user_by_id(who_like[-1])
+        user_like = await get_user_by_id(str(msg.from_user.id))
+        who_like_id = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
+        dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
+        await bot.send_message(
+            who_like_id,
+            f'У вас взаимная симпатия,\n Надеюсь что-то у вас выйдет()()()(): @{user_like["user_name"]} '
+        )
+        await bot.send_message(
+            msg.from_user.id, 
+            f'Надеюсь что-то у вас выйдет()()()(): @{user["user_name"]}'
+        )
+        if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
+            await show_like(msg)
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Вы вернулись к просмотрю анкет)'
+            )
+        await search_love_step1(msg)
+    elif user["is_blocked"]:
         await bot.send_message(
             msg.from_user.id,
-            'Вы вернулись к просмотрю анкет)'
+            'Ваша анкета была заблокирована'
         )
-    await search_love_step1(msg)
 
 @dp.message_handler(Text('👎🏻'))
 async def dislike_liked(msg: types.Message):
-    dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
-    if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
-        await show_like(msg)
-    else:
+    user_id = str(msg.from_user.id)
+    user = await get_user_by_id(user_id)
+    if not user["is_blocked"]:
+        dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
+        if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
+            await show_like(msg)
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Вы вернулись к просмотрю анкет)'
+            )
+            await search_love_step1(msg)
+    elif user["is_blocked"]:
         await bot.send_message(
             msg.from_user.id,
-            'Вы вернулись к просмотрю анкет)'
+            'Ваша анкета была заблокирована'
         )
-        await search_love_step1(msg)
-
 
 @dp.message_handler(Text('⚠️'))
 async def search_report(msg: types.Message):
@@ -728,35 +790,54 @@ async def search_report(msg: types.Message):
         reply_markup=report_kb()
     )
 
-@dp.callback_query_handler(lambda c: 'report' in c.data)
+@dp.callback_query_handler(lambda c: 'report' in c.data and c.data != 'report:other')
 async def report_callback(callback_query: types.CallbackQuery):
     user_id = str(callback_query.from_user.id)
     report = callback_query.data.split(':')[1]
     report_user_id = dict_of_profiles[user_id]["profiles_list"][-1] 
     if report != 'cancel':
         dict_of_profiles[user_id]["profiles_list"].pop()
-        match report:
-            case 'adults':
-                #жалоба с номером id админу
-                pass
-            case 'drugs':
-                #жалоба с номером id админу
-                pass
-            case 'scum':
-                #жалоба с номером id админу
-                pass
-            case 'other':
-                #жалоба с номером id админу
-                pass
+        list_of_admins = await get_list_of_admins()
+        for admin_id in list_of_admins:
+            await bot.send_message(
+                admin_id,
+                f'На пользователя {report_user_id} была подана жалоба по причине "{report}"'
+            )
         await bot.send_message(
             callback_query.from_user.id, 
             'Жалоба успешно отправлена'
         )     
     await search_love_step1(callback_query)
 
-            
+@dp.callback_query_handler(lambda c: c.data == 'report:other')
+async def report_callback_other(callback_query: types.CallbackQuery):
+    await bot.send_message(
+        callback_query.from_user.id,
+        'Опишите причину подачи жалобы'
+    )
+    await ReportUserOther.cause.set()
 
+@dp.message_handler(state=ReportUserOther.cause)
+async def report_callback_other_state(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
+    async with state.proxy() as data:
+        data["cause"] = msg.text
+    report_user_id = dict_of_profiles[user_id]["profiles_list"][-1] 
+    dict_of_profiles[user_id]["profiles_list"].pop()
+    list_of_admins = await get_list_of_admins()
+    for admin_id in list_of_admins:
+        await bot.send_message(
+            admin_id,
+            f'На пользователя {report_user_id} была подана жалоба по причине "{data["cause"]}"'
+        )
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id, 
+            'Жалоба успешно отправлена'
+        )  
+    await search_love_step1(msg)
 
+    
 
 ############################################################################################################################
         
@@ -1004,13 +1085,12 @@ async def login_admin(msg: types.Message):
             msg.from_user.id, 
             'Ты попал в админ панель, вот список команд:\n\
 "/block_user"\n\
-"/check_user"\n\
+"/get_user_by_id"\n\
 "/unblock_user"\n\
-"/get_active_users"\n\
-"/total_users\n\
+"/get_statistic"\n\
 "/spam"\n\
 "/get_user_by_photo"\n\
-'
+"/send_message_form_user_by_id"'
         )
 
 
@@ -1019,13 +1099,13 @@ async def admin_block_user(msg: types.Message):
     user_id = str(msg.from_user.id)
     list_of_admins = await get_list_of_admins()
     if user_id in list_of_admins:
-        await AdminDeleteUser.user_id.set()
+        await AdminBlockUser.user_id.set()
         await bot.send_message(
             msg.from_user.id, 
             'Введите id пользователя, которого хотите заблокировать.\nЕсли вы хотите отменить действие, введите "Отмена"'
         )
 
-@dp.message_handler(state=AdminDeleteUser.user_id)
+@dp.message_handler(state=AdminBlockUser.user_id)
 async def state_admin_block_user_step1(msg: types.Message, state: FSMContext):
     if msg.text.lower() != 'отмена':
         async with state.proxy() as data:
@@ -1034,7 +1114,7 @@ async def state_admin_block_user_step1(msg: types.Message, state: FSMContext):
             msg.from_user.id, 
             'Введите причину блокировки, если вы хотите отменить действие, введите "отмена"'
         )
-        await AdminDeleteUser.next()
+        await AdminBlockUser.next()
     else:
         await state.finish()
         await bot.send_message(
@@ -1042,13 +1122,12 @@ async def state_admin_block_user_step1(msg: types.Message, state: FSMContext):
             'Действие отменено'
         )
         
-@dp.message_handler(state=AdminDeleteUser.cause)
+@dp.message_handler(state=AdminBlockUser.cause)
 async def state_admin_block_user_step2(msg: types.Message, state: FSMContext):
-    print('заход')
     if msg.text.lower() != 'отмена':
             async with state.proxy() as data:
                 data["cause"] = msg.text
-            await AdminDeleteUser.next()
+            await AdminBlockUser.next()
             await bot.send_message(
                 msg.from_user.id,
                 'Подтвердите действие, введите "Да/Нет"'
@@ -1060,7 +1139,7 @@ async def state_admin_block_user_step2(msg: types.Message, state: FSMContext):
             'Действие отменено'
         )
 
-@dp.message_handler(state=AdminDeleteUser.confirmation)
+@dp.message_handler(state=AdminBlockUser.confirmation)
 async def state_admin_block_user_step3(msg: types.Message, state: FSMContext):
     if msg.text.lower() == 'да':
         async with state.proxy() as data:
@@ -1071,11 +1150,78 @@ async def state_admin_block_user_step3(msg: types.Message, state: FSMContext):
                 msg.from_user.id, 
                 f'Пользователь {data["user_id"]} успешно заблокирован'
             )
+            blocked_user = await get_user_by_id(data["user_id"])
+            del dict_of_profiles[data["user_id"]]
             await bot.send_message(
                 data["user_id"],
-                f'Вы были заблокированы по причине:\n"{data["cause"]}"\nВы можете обратиться в поддержку и оспорить решение: @sliv_kursov_admin'
+                f'Привет, {blocked_user["name"]}, вы были заблокированы по причине:\n\n"{data["cause"]}"\n\nВы можете обратиться в поддержку и оспорить решение: @sliv_kursov_admin'
             )
         elif not block:
+            await bot.send_message(
+                msg.from_user.id, 
+                'Произошла ошибка, скорее всего пользователя с таким id не существует'
+            )
+    elif msg.text.lower() == 'нет':
+        await bot.send_message(
+            msg.from_user.id, 
+            'Действие отменено'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return 
+    await state.finish()
+
+
+@dp.message_handler(commands=['unblock_user'])
+async def admin_unblock_user(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await AdminUnblockUser.user_id.set()
+        await bot.send_message(
+            msg.from_user.id, 
+            'Введите id пользователя, которого хотите разблокировать.\nЕсли вы хотите отменить действие, введите "Отмена"'
+        )
+
+@dp.message_handler(state=AdminUnblockUser.user_id)
+async def state_admin_unblock_user_step1(msg: types.Message, state: FSMContext):
+    if msg.text.lower() != 'отмена':
+        async with state.proxy() as data:
+            data["user_id"] = msg.text
+        await bot.send_message(
+            msg.from_user.id, 
+            'Подтвердите действие, введите "Да/Нет"'
+        )
+        await AdminUnblockUser.next()
+    else:
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+
+@dp.message_handler(state=AdminUnblockUser.confirmation)
+async def state_admin_unblock_user_step2(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        unblock = await unblock_user_db(data["user_id"])
+        if unblock:
+            await bot.send_message(
+                msg.from_user.id,
+                f'Пользователь {data["user_id"]} успешно разблокирован'
+            )
+            unblocked_user = await get_user_by_id(data["user_id"])
+            await bot.send_message(
+                data["user_id"],
+                f'Привет, {unblocked_user["name"]}, ваша анкета раблокированна!\n\nВведите "/menu" для продолжения.'
+            )
+
+
+        elif not unblock:
             await bot.send_message(
                 msg.from_user.id, 
                 'Произошла ошибка, скорее всего пользователя с таким id не существует'
@@ -1086,10 +1232,271 @@ async def state_admin_block_user_step3(msg: types.Message, state: FSMContext):
             msg.from_user.id, 
             'Действие отменено'
         )
+    else:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return 
+    await state.finish()
+
+            
+
+@dp.message_handler(commands=['get_user_by_id'])
+async def admin_state_get_user_by_id(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите id пользователя'
+        )
+        await AdminGetUserById.user_id.set()
+
+@dp.message_handler(state=AdminGetUserById.user_id)
+async def state_admin_get_user_by_id(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["user_id"] = msg.text
+    user_with_anket = await get_user_by_id(data["user_id"], Anketa=True)
+    user_data = await get_user_by_id(data["user_id"])
+    await bot.send_photo(
+        msg.from_user.id,
+        open(f'static/users_photo/{data["user_id"]}.jpg', 'rb'),
+        user_with_anket,
+    )
+    await bot.send_message(
+        msg.from_user.id,
+        user_data,
+    )
+    await state.finish()
+
+@dp.message_handler(commands=['get_statistic'])
+async def admin_get_user_by_admin(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        users, count = await get_statistic_user_db()
+        await bot.send_message(
+            msg.from_user.id,
+            f'Всего пользователей: {users}\nАктивных пользователей: {count}'
+        )
 
 
+@dp.message_handler(commands=['spam'])
+async def admin_spam(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await AdminSpamHasPhoto.has_photo.set()
+        await bot.send_message(
+            msg.from_user.id,
+            'Рассылка будет с фото?("Да/Нет")'
+        )
+
+@dp.message_handler(state=AdminSpamHasPhoto.has_photo)
+async def state_admin_spam_step1(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да' or msg.text.lower() == 'нет':
+        async with state.proxy() as data:
+            data["has_photo"] = msg.text
+        await state.finish()
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа'
+        )
+        return
+    if data["has_photo"].lower() == 'да':
+        await bot.send_message(
+            msg.from_user.id,
+            'Отправьте фотографию'
+        )
+        await AdminSpamWithPhoto.path.set()
+    elif data["has_photo"].lower() == 'нет':
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите текст рассылки'
+        )
+        await AdminSpamOnlyText.spam_text.set()
 
 
+######## Спам с фото ########
+@dp.message_handler(content_types=['photo'], state=AdminSpamWithPhoto)
+async def state_admin_spam_with_photo_step1(msg: types.Message, state: FSMContext):
+    try:
+        file_name = 'spam.jpg'
+        path = f'static/spam_photo/{file_name}'
+        async with state.proxy() as data:
+                data['path'] = path
+        await msg.photo[-1].download(path)
+        await bot.send_message(
+            msg.from_user.id, 
+            'Фотография успешно добавлена, введите текст рассылки'
+            )
+        await AdminSpamWithPhoto.next()
+    except Exception as e:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Произошла ошибка, попробуйте отправить фотографию еще раз...'
+        )
+        return
+
+@dp.message_handler(state=AdminSpamWithPhoto.spam_text)
+async def state_admin_spam_with_photo_step2(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["spam_text"] = msg.text
+    await bot.send_message(
+        msg.from_user.id, 
+        'Рассылка будет выглядеть вот так:'
+    )
+    await bot.send_photo(
+        msg.from_user.id,
+        open(data["path"], 'rb'),
+        data["spam_text"]
+    )
+    await bot.send_message(
+        msg.from_user.id,
+        'Подтвердите действие для начала рассылки "Да/Нет"'
+    )
+    
+    await AdminSpamWithPhoto.next()
+
+@dp.message_handler(state=AdminSpamWithPhoto.confirmation)
+async def state_admin_spam_with_photo_step2(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        list_of_users = await get_list_of_users_for_spam_db()
+        count = 0
+        for user in list_of_users:
+            try:
+                await bot.send_photo(
+                    user,
+                    open(data["path"], 'rb'),
+                    data["spam_text"]
+                )
+                count+=1
+            except:
+                pass
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id, 
+            f'Рассылка успешно отправлена {count} пользователям!'
+        )
+    elif msg.text.lower() == 'нет':
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Рассылка отменена'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return
+
+########################
+
+######## Спам без фото ########
+
+@dp.message_handler(state=AdminSpamOnlyText.spam_text)
+async def state_admin_spam_only_text_step1(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["spam_text"] = msg.text
+    await bot.send_message(
+        msg.from_user.id,
+        'Рассылка будет выглядеть вот так:'
+    )
+    await bot.send_message(
+        msg.from_user.id,
+        data["spam_text"]
+    )
+    await bot.send_message(
+        msg.from_user.id,
+        'Подтвердите действие для начала рассылки "Да/Нет"'
+    )
+    await AdminSpamOnlyText.next()
+
+@dp.message_handler(state=AdminSpamOnlyText.confirmation)
+async def state_admin_spam_only_text_step2(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        list_of_users = await get_list_of_users_for_spam_db()
+        count = 0
+        for user in list_of_users:
+            try:
+                await bot.send_message(
+                    user,
+                    data["spam_text"]
+                )
+                count+=1
+            except:
+                pass
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id, 
+            f'Рассылка успешно отправлена {count} пользователям!'
+        )
+    elif msg.text.lower() == 'нет':
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Рассылка отменена'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return
+
+########################
+
+######## Поиск по фото ########
+@dp.message_handler(commands=['get_user_by_photo'])
+async def admin_get_user_by_photo(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await bot.send_message(
+            msg.from_user.id,
+            'Отправьте фотографию'
+        )
+        await AdminGetUserByPhoto.path.set()
+    
+@dp.message_handler(content_types=['photo'], state=AdminGetUserByPhoto.path)
+async def state_admin_get_user_by_photo(msg: types.Message, state: FSMContext):
+    try:
+        file_name = 'search.jpg'
+        path = f'static/utils_data/{file_name}'
+        async with state.proxy() as data:
+                data['path'] = path
+        await msg.photo[-1].download(path)
+        rezult, user = await compare_images(path)
+        if user is not None:
+            await bot.send_message(
+                msg.from_user.id,
+                rezult
+            )
+            anketa = await get_user_by_id(user, Anketa=True)
+            await bot.send_photo(
+                msg.from_user.id,
+                open(f'static/users_photo/{user}.jpg', 'rb'),
+                anketa
+            )    
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                rezult
+            )
+        await state.finish()
+    except Exception as e:
+        await bot.send_message(
+            msg.from_user.id, 
+            'Произошла ошибка, попробуйте отправить фотографию еще раз...'
+        )
+        return
 
 
 
