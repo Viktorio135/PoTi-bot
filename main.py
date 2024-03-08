@@ -1,5 +1,10 @@
 import json
+import logging
+import threading
+import os
+
 from datetime import datetime
+from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher import FSMContext
@@ -21,9 +26,9 @@ from keyboards import (
     my_profile_kb, select_search, search_kb,
     show_like_kb, like_kb, filters_main_kb,
     filter_cource_age_kb, history_dislike_kb, report_kb, 
-    change_profile_kb
+    change_profile_kb, description_is_empty
 )
-from dataBase.dump import dump_dict
+from dataBase.dump import scheduled_backup_dict_of_profiles
 from dataBase.models import start_db
 from states.user_states import (
     Register_new_user, Filter_age, Filter_university, 
@@ -41,7 +46,11 @@ from utils.search_photo import compare_images
 
 
 
-bot = Bot(token='6874586651:AAFeVAJ4fOIR_z2uWcG1Og5kaWOhkNCH3U0')
+
+load_dotenv()
+token = os.getenv('TOKEN')
+
+bot = Bot(token=token)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 cached_data = {}
@@ -123,16 +132,16 @@ async def register_search(callback_query: types.CallbackQuery, state: FSMContext
 
 @dp.message_handler(state=Register_new_user.age)
 async def register_age(msg: types.Message, state: FSMContext):
-   
+    user_id = str(msg.from_user.id)
     if msg.text.isdigit() and 15 <= int(msg.text) < 100:
             async with state.proxy() as data:
                 data['age'] = msg.text
-
-            await bot.send_message(
+            cached_data[user_id] = await bot.send_message(
                 msg.from_user.id, 
-                'Хорошо, теперь придумая описание профиля'
+                'Хорошо, теперь придумая описание профиля',
+                reply_markup=description_is_empty()
                 )
-
+            
             await Register_new_user.next()
     else:
         await bot.send_message(
@@ -141,10 +150,24 @@ async def register_age(msg: types.Message, state: FSMContext):
             )
         return
     
+@dp.callback_query_handler(state=Register_new_user.description)
+async def callback_description_is_empty(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    async with state.proxy() as data:
+        data["description"] = ''
+    await cached_data[user_id].delete()
+    del cached_data[user_id]
+    await bot.send_message(
+        callback_query.from_user.id, 
+        'Давай теперь определимся с учебным заведением!',
+        reply_markup=await select_university() 
+    )
+    await Register_new_user.next()
+    
 @dp.message_handler(state=Register_new_user.description)
 async def register_description(msg: types.Message, state: FSMContext):
     async with state.proxy() as data:
-                data['description'] = '' if msg.text == '0' else msg.text
+        data['description'] = msg.text
     await bot.send_message(
         msg.from_user.id, 
         'Давай теперь определимся с учебным заведением!',
@@ -211,6 +234,7 @@ async def register_course(msg: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=['photo'], state=Register_new_user.photos)
 async def register_description(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
     try:
         file_name = f'{msg.from_user.id}.jpg'
         path = f'static/users_photo/{file_name}'
@@ -226,7 +250,8 @@ async def register_description(msg: types.Message, state: FSMContext):
         
         await end_registration(msg, data)
         await state.finish()
-    except Exception as error:    
+    except Exception as e:   
+        logging.error(f'Ошибка в регистрации при сохранении фото у пользователя {user_id}', exc_info=True) 
         await bot.send_message(
             msg.from_user.id, 
             'Произошла ошибка сохранения, попробуйте снова'
@@ -297,11 +322,13 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
         else:
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Ошибка базы данных!!'
+                'Что-то пошло не так, попробуйте снова'
             )
+            await register_or_update_user(callback_query.message)
+
 
     except Exception as e:
-            print(e)
+            logging.error(f'Ошибка в окончании регистрации у пользователя {str(callback_query.from_user.id)}', exc_info=True)
             await bot.send_message(
                  callback_query.from_user.id,
                  'Что-то пошло не так, давай попробуем снова('
@@ -329,13 +356,14 @@ async def menu(msg: types.Message):
                 f'{user["name"]}, ты попал в главное меню, выбери действие;)',
                 reply_markup=menu_kb()
             )
-        else: 
+        else:
             await bot.send_message(
                 msg.from_user.id,
                 f'Ошибка базы данных',
             )
              
     except Exception as e:
+        logging.error(f'Ошибка в главном меню у пользователя {str(msg.from_user.id)}', exc_info=True)
         await bot.send_message(
                 msg.from_user.id,
                 f'Ошибка базы данных: {e}',
@@ -426,6 +454,7 @@ async def state_change_photo(msg: types.Message, state: FSMContext):
             )
         await my_profile(msg)
     except Exception as e:
+        logging.error(f'Ошибка при обновлении фото у пользователя {str(msg.from_user.id)}', exc_info=True)
         await bot.send_message(
             msg.from_user.id, 
             'Произошла ошибка, попробуйте отправить фотографию еще раз...'
@@ -661,31 +690,34 @@ async def search_love_step1(msg: types.Message):
 @dp.message_handler(Text('❤️'))
 async def like_main(msg: types.Message):
     user_id = str(msg.from_user.id)
-    user = await get_user_by_id(user_id)
-    if not user["is_blocked"]:
-        list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
-        like = list_of_profiles[-1]
-        dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
-        
-        who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
-        dict_of_profiles[user_id]["profiles_list"].pop()
-        await bot.send_message(
-            like,
-            'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
-            reply_markup=show_like_kb()
-        )
+    try:
+        user = await get_user_by_id(user_id)
+        if not user["is_blocked"]:
+            list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
+            like = list_of_profiles[-1]
+            dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
+            
+            who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
+            dict_of_profiles[user_id]["profiles_list"].pop()
+            await bot.send_message(
+                like,
+                'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
+                reply_markup=show_like_kb()
+            )
 
-        await bot.send_message(
-            msg.from_user.id,
-            'Сердечко успешно отправлено)))',
-        )
+            await bot.send_message(
+                msg.from_user.id,
+                'Сердечко успешно отправлено)))',
+            )
 
-        await search_love_step1(msg)
-    elif user["is_blocked"]:
-        await bot.send_message(
-            msg.from_user.id,
-            'Ваша анкета была заблокирована'
-        )
+            await search_love_step1(msg)
+        elif user["is_blocked"]:
+            await bot.send_message(
+                msg.from_user.id,
+                'Ваша анкета была заблокирована'
+            )
+    except Exception as e:
+        logging.error(user_id, exc_info=True)
     
 @dp.message_handler(Text('👎'))
 async def dislike_main(msg: types.Message):
@@ -937,7 +969,6 @@ async def state_filter_age(msg: types.Message, state: FSMContext):
                 )
                 return
         except Exception as e:
-            print(e)
             await bot.send_message(
                     msg.from_user.id,
                     'Вы ввели возраст в неправильно формате, ведите возраст в формате:\n\n"нижняя граница" - "верхняя граница"\nНапример 18-20\n\nЕсли вы хотите определенный возраст, отправьте просто одно число)'
@@ -1503,40 +1534,55 @@ async def state_admin_get_user_by_photo(msg: types.Message, state: FSMContext):
 
 
 
-@dp.message_handler(commands='1357')
-async def save_data(msg: types.Message):
-    if await dump_dict(dict_of_profiles):
-        await bot.send_message(
-            msg.from_user.id,
-            'Данные схранены'
-        )
-    else:
-        await bot.send_message(
-            msg.from_user.id,
-            'Данные не схранены'
-        )
+# @dp.message_handler(commands='1357')
+# async def save_data(msg: types.Message):
+#     if await dump_dict(dict_of_profiles):
+#         await bot.send_message(
+#             msg.from_user.id,
+#             'Данные схранены'
+#         )
+#     else:
+#         await bot.send_message(
+#             msg.from_user.id,
+#             'Данные не схранены'
+#         )
 
-@dp.message_handler(commands='2468')
-async def load_data(msg: types.Message):
+
+def load_data():
     global dict_of_profiles
     try:
-        with open('static/load_data/dump.json', 'r') as file:
+        with open('static/backups/dump.json', 'r') as file:
             dict_of_profiles = json.loads(file.read())
-        await bot.send_message(
-            msg.from_user.id,
-            'Данные схранены'
-        )
+        logging.info('Успешная запись данных из dump в dict_of_profiles')
     except:
-        await bot.send_message(
-            msg.from_user.id,
-            'Данные не схранены'
-        )
+        logging.error('Ошибка записи данных из dump в dict_of_profiles')
+        
 
 if __name__ == '__main__':
     start_db()
+    load_data()
+    logging.getLogger().setLevel(logging.INFO)
+
+    # Настройка обработчика для info-сообщений
+    info_handler = logging.FileHandler('utils/main_info.log')
+    info_handler.setLevel(logging.INFO)
+    info_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+
+    # Настройка обработчика для error-сообщений
+    error_handler = logging.FileHandler('utils/main_errors.log')
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+
+    # Добавление обработчиков к глобальному логгеру
+    logging.getLogger().addHandler(info_handler)
+    logging.getLogger().addHandler(error_handler)
+
+    # Запуск потока для бэкапов
+    thread_backup_dict_of_profiles = threading.Thread(target=scheduled_backup_dict_of_profiles, daemon=True, args=(dict_of_profiles,))
+    thread_backup_dict_of_profiles.start()
+
+    # Запуск бота
     executor.start_polling(dp, skip_updates=True)
-
-
 
 
 

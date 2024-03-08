@@ -1,4 +1,6 @@
-import config
+import os
+
+from dotenv import load_dotenv
 
 from sqlalchemy import (
     Column, 
@@ -15,8 +17,16 @@ from sqlalchemy import create_engine
 from datetime import datetime
 
 
+
+load_dotenv()
+
+user_bd = os.getenv('USER_BD')
+password = os.getenv('PASSWORD')
+host = os.getenv('HOST')
+database = os.getenv('DATABASE')
+
 Base = declarative_base()
-engine = create_engine(f"mysql+mysqlconnector://{config.USER}:{config.PASSWORD}@{config.HOST}/{config.DATABASE}")
+engine = create_engine(f"mysql+mysqlconnector://{user_bd}:{password}@{host}/{database}")
 
 class User(Base):
     __tablename__ = 'Users'

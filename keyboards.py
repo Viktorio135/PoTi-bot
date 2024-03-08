@@ -55,6 +55,11 @@ async def select_university(is_filter=False):
         keyboard.add(btn_all)
         return keyboard
 
+def description_is_empty():
+    btn1 = InlineKeyboardButton(text='Оставить пустым', callback_data='description_is_empty')
+    keyboard = InlineKeyboardMarkup().add(btn1)
+    return keyboard
+
 def end_registration_kb(file_id):
     
     btn1 = InlineKeyboardButton(text='Всё верно!', callback_data=f'end_registration:{file_id}')

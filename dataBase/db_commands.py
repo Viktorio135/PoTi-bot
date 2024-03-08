@@ -1,11 +1,20 @@
 import random
+import logging
+import schedule
 
-from dataBase.models import engine
-from dataBase.models import User, University, Admins
 
 from datetime import date
 from sqlalchemy.orm import Session
 from asgiref.sync import sync_to_async
+
+from dataBase.models import engine
+from dataBase.models import User, University, Admins
+
+# logging.basicConfig(level=logging.ERROR, 
+#                     filename='utils/db_errors.log', 
+#                     filemode='w',
+#                     format="%(asctime)s %(levelname)s %(message)s"
+#                     )
 
 
 @sync_to_async
@@ -46,8 +55,7 @@ def create_user(
             session.commit()
             return 1
     except Exception as e:
-        print(e)
-
+        logging.error(f'Ошибка при создании анкеты у пользователя {user_id}', exc_info=True)
         return 0
     
 @sync_to_async
@@ -133,42 +141,41 @@ def get_list_of_profiles(
     max_age,
     min_age
     ):
-    with Session(autoflush=False, bind=engine) as session:
-        obj = session.query(User).filter(User.user_id == user_id).first()
-        list_of_profiles = []
-        whom = obj.search_to
-        users = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False)
-        if to_education != 'all':
-            users = users.filter(User.education == to_education)
-        if to_university != 3:
-            users = users.filter(User.university == to_university)
-        if to_course != 0:
-            users = users.filter(User.course == to_course)
-        if max_age != 0:
-            users = users.filter(User.age <= max_age)
-        if min_age != 0:
-            users = users.filter(User.age >= min_age)
-        users = users.all()
-        if users is not None:
-            
-            for user in users:
-                if user.sex == whom:
-                    list_of_profiles.append(user.user_id)
-            
-            if len(list_of_profiles) == 1:
-                return list_of_profiles
-            elif len(list_of_profiles) == 0:
-                return []
-            elif len(list_of_profiles) > 1:
+    try:
+        with Session(autoflush=False, bind=engine) as session:
+            obj = session.query(User).filter(User.user_id == user_id).first()
+            list_of_profiles = []
+            whom = obj.search_to
+            users = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False)
+            if to_education != 'all':
+                users = users.filter(User.education == to_education)
+            if to_university != 3:
+                users = users.filter(User.university == to_university)
+            if to_course != 0:
+                users = users.filter(User.course == to_course)
+            if max_age != 0:
+                users = users.filter(User.age <= max_age)
+            if min_age != 0:
+                users = users.filter(User.age >= min_age)
+            users = users.all()
+            if users is not None:
                 
-                random.shuffle(list_of_profiles)
-                print(list_of_profiles)
+                for user in users:
+                    if user.sex == whom:
+                        list_of_profiles.append(user.user_id)
+                
+                if len(list_of_profiles) == 1:
+                    return list_of_profiles
+                elif len(list_of_profiles) == 0:
+                    return []
+                elif len(list_of_profiles) > 1:
+                    
+                    random.shuffle(list_of_profiles)
+                    return list_of_profiles
+            else:
                 return list_of_profiles
-        else:
-            return list_of_profiles
-
-        
-
+    except Exception as e:
+        logging.error(f'Ошибка при создании списка подбираемых анкет у пользователя {user_id}', exc_info=True)
 
 @sync_to_async
 def has_register(user_id):
@@ -269,7 +276,7 @@ async def get_user_by_id(user_id, Anketa=False):
 {data["education"]})\n\n\
 {data["description"]}'
             except Exception as e:
-                print(e)
+                logging.error(f'Ошибка при получении анкеты пользователя с парраметром Anketa = {Anketa}, user_id = {user_id}')
                 return 'Error'
         else:
             return 'User not found'
@@ -330,3 +337,5 @@ def get_list_of_users_for_spam_db():
         for user in objs:
             users.append(user.user_id)
     return users
+
+

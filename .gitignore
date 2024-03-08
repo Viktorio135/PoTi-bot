@@ -1,7 +1,10 @@
 __pycache__
 venv
-static/users_photo
+static/
 .DS_Store
-dump.json
-users_photo
 utils_data
+.env
+main_errors.log
+main_info.log
+
+
