@@ -132,6 +132,8 @@ def update_filter_education_db(user_id, to_education):
         return 1
 
 
+
+
 @sync_to_async
 def get_list_of_profiles(
     user_id,
@@ -252,6 +254,7 @@ async def get_user_by_id(user_id, Anketa=False):
                     "max_age": obj.max_age,
                     "min_age": obj.min_age,
                     "is_blocked": obj.is_blocked,
+                    "is_active": obj.is_active,
                 }
 
                 match data["education"]:

@@ -2,10 +2,13 @@ import json
 import logging
 import threading
 import os
+import time
+import asyncio
 
 from datetime import datetime
 from dotenv import load_dotenv
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
@@ -26,10 +29,9 @@ from keyboards import (
     my_profile_kb, select_search, search_kb,
     show_like_kb, like_kb, filters_main_kb,
     filter_cource_age_kb, history_dislike_kb, report_kb, 
-    change_profile_kb, description_is_empty
+    change_profile_kb, description_is_empty, reminder_kb
 )
-from dataBase.dump import scheduled_backup_dict_of_profiles
-from dataBase.models import start_db
+
 from states.user_states import (
     Register_new_user, Filter_age, Filter_university, 
     Filter_course, Change_age, Change_description, 
@@ -43,6 +45,8 @@ from states.admin_states import (
 )
 
 from utils.search_photo import compare_images
+from dataBase.models import start_db
+from utils.scheduler import start_schedule
 
 
 
@@ -155,8 +159,9 @@ async def callback_description_is_empty(callback_query: types.CallbackQuery, sta
     user_id = str(callback_query.from_user.id)
     async with state.proxy() as data:
         data["description"] = ''
-    await cached_data[user_id].delete()
-    del cached_data[user_id]
+    if user_id in cached_data:
+        await cached_data[user_id].delete()
+        del cached_data[user_id]
     await bot.send_message(
         callback_query.from_user.id, 
         'Давай теперь определимся с учебным заведением!',
@@ -606,12 +611,11 @@ async def search_love_reg(msg: types.Message):
                 )
             dict_of_profiles[user_id] = {
                     "profiles_list": list_of_profiles,
-                    "last_activity": str(datetime.now()),
+                    "last_activity": int(time.time()),
                     "like": [],
                     "history_dislike": [],
                     "who_like": [],
                 }
-            
             await search_love_step1(msg)
         else:
             if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
@@ -655,7 +659,7 @@ async def update_list_of_profiles_with_new_filters(msg: types.Message):
     else:
         dict_of_profiles[user_id] = {
                 "profiles_list": list_of_profiles,
-                "last_activity": str(datetime.now()),
+                "last_activity": int(time.time()),
                 "like": [],
                 "history_dislike": [],
                 "who_like": [],
@@ -693,6 +697,7 @@ async def like_main(msg: types.Message):
     try:
         user = await get_user_by_id(user_id)
         if not user["is_blocked"]:
+            dict_of_profiles[user_id]["last_activity"] = int(time.time())
             list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
             like = list_of_profiles[-1]
             dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
@@ -724,6 +729,7 @@ async def dislike_main(msg: types.Message):
     user_id = str(msg.from_user.id)
     user = await get_user_by_id(user_id)
     if not user["is_blocked"]:
+        dict_of_profiles[user_id]["last_activity"] = int(time.time())
         if len(dict_of_profiles[user_id]["history_dislike"]) == 5:
             dict_of_profiles[user_id]["history_dislike"].pop(0)
         if dict_of_profiles[user_id]["profiles_list"][-1] not in dict_of_profiles[user_id]["history_dislike"]:
@@ -739,6 +745,8 @@ async def dislike_main(msg: types.Message):
 
 @dp.message_handler(Text('💤'))
 async def sleep_main(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    dict_of_profiles[user_id]["last_activity"] = int(time.time())
     await menu(msg)
 
 
@@ -747,6 +755,7 @@ async def show_like(msg: types.Message):
     user_id = str(msg.from_user.id)
     user = await get_user_by_id(user_id)
     if not user["is_blocked"]:
+        dict_of_profiles[user_id]["last_activity"] = int(time.time())
         who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"][-1]
         profile = await get_user_by_id(who_like, Anketa=True)
         await bot.send_photo(
@@ -767,6 +776,7 @@ async def like_liked(msg: types.Message):
     user_id = str(msg.from_user.id)
     user = await get_user_by_id(user_id)
     if not user["is_blocked"]:
+        dict_of_profiles[user_id]["last_activity"] = int(time.time())
         who_like = dict_of_profiles[str(msg.from_user.id)]["who_like"]
         user = await get_user_by_id(who_like[-1])
         user_like = await get_user_by_id(str(msg.from_user.id))
@@ -799,6 +809,7 @@ async def dislike_liked(msg: types.Message):
     user_id = str(msg.from_user.id)
     user = await get_user_by_id(user_id)
     if not user["is_blocked"]:
+        dict_of_profiles[user_id]["last_activity"] = int(time.time())
         dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
         if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
             await show_like(msg)
@@ -816,6 +827,8 @@ async def dislike_liked(msg: types.Message):
 
 @dp.message_handler(Text('⚠️'))
 async def search_report(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    dict_of_profiles[user_id]["last_activity"] = int(time.time())
     await bot.send_message(
         msg.from_user.id, 
         'Укажите причину жалобы:',
@@ -1556,11 +1569,26 @@ def load_data():
         logging.info('Успешная запись данных из dump в dict_of_profiles')
     except:
         logging.error('Ошибка записи данных из dump в dict_of_profiles')
+
+
+# async def reminder():
+#     global dict_of_profiles
+#     for user in dict_of_profiles:
+#         data = await get_user_by_id(user)
+#         if not(data["is_blocked"]) and data["is_active"]:
+#             if int(time.time()) - dict_of_profiles[user]['last_activity'] > 180:
+#                 dict_of_profiles[user]['last_activity'] = int(time.time())
+#                 await bot.send_message(
+#                     int(user),
+#                     'От вас давно не было никакой активности',
+#                     reply_markup=reminder_kb()
+#                 )
         
 
 if __name__ == '__main__':
     start_db()
     load_data()
+    scheduler = AsyncIOScheduler()
     logging.getLogger().setLevel(logging.INFO)
 
     # Настройка обработчика для info-сообщений
@@ -1578,9 +1606,9 @@ if __name__ == '__main__':
     logging.getLogger().addHandler(error_handler)
 
     # Запуск потока для бэкапов
-    thread_backup_dict_of_profiles = threading.Thread(target=scheduled_backup_dict_of_profiles, daemon=True, args=(dict_of_profiles,))
+    thread_backup_dict_of_profiles = threading.Thread(target=start_schedule, daemon=True, args=(scheduler, dict_of_profiles, bot))
     thread_backup_dict_of_profiles.start()
-
+    scheduler.start()
     # Запуск бота
     executor.start_polling(dp, skip_updates=True)
 

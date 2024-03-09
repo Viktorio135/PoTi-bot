@@ -75,6 +75,12 @@ def menu_kb():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn2).row(btn1, btn4, btn3)
     return keyboard
 
+def reminder_kb():
+    btn1 = KeyboardButton(text='🚀 Cмотреть анкеты')
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn1)
+    return keyboard
+
+
 def reg_menu():
     btn1 = KeyboardButton(text='Меню')
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).row(btn1)

@@ -15,7 +15,7 @@ host = os.getenv('HOST')
 database = os.getenv('DATABASE')
 
 
-def dump_dict_of_profiles(dict_of_profiles):
+async def dump_dict_of_profiles(dict_of_profiles):
     try:
         with open('static/backups/dump.json', 'w') as file:
             json.dump(dict_of_profiles, file)
@@ -25,9 +25,8 @@ def dump_dict_of_profiles(dict_of_profiles):
         logging.error(f'Ошибка дампа dict_of_profiles: {e}')
         return 0
 
-def backup_bd():
+async def backup_bd():
     try:
-        print('adsasd')
         backup_path = 'static/backups/database.sql'
         os.environ['MYSQL_PWD'] = password
         subprocess.run(['mysqldump', '-u', user_bd, database, '--result-file', backup_path])
@@ -38,10 +37,3 @@ def backup_bd():
         del os.environ['MYSQL_PWD']
 
 
-
-def scheduled_backup_dict_of_profiles(dict_of_profiles):
-    schedule.every(0.5).minutes.do(dump_dict_of_profiles, dict_of_profiles)
-    schedule.every(0.1).minutes.do(backup_bd)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
