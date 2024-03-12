@@ -3,9 +3,8 @@ import logging
 import threading
 import os
 import time
-import asyncio
+import random
 
-from datetime import datetime
 from dotenv import load_dotenv
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -21,7 +20,8 @@ from dataBase.db_commands import (
     update_filter_age_max, update_filter_age_min, update_filter_university_db,
     update_filter_cource, update_filter_education_db, change_description_by_id,
     change_age_by_id, get_list_of_admins, block_user_db,
-    unblock_user_db, get_statistic_user_db, get_list_of_users_for_spam_db
+    unblock_user_db, get_statistic_user_db, get_list_of_users_for_spam_db,
+    add_admin_db, delete_admin_db
 )
 from keyboards import (
     select_sex, select_university, select_education, 
@@ -29,7 +29,8 @@ from keyboards import (
     my_profile_kb, select_search, search_kb,
     show_like_kb, like_kb, filters_main_kb,
     filter_cource_age_kb, history_dislike_kb, report_kb, 
-    change_profile_kb, description_is_empty, reminder_kb
+    change_profile_kb, description_is_empty, reminder_kb,
+    support_kb, promocode_is_empty
 )
 
 from states.user_states import (
@@ -41,7 +42,8 @@ from states.user_states import (
 from states.admin_states import (
     AdminBlockUser, AdminUnblockUser, AdminGetUserById,
     AdminSpamHasPhoto, AdminSpamOnlyText, AdminSpamWithPhoto,
-    AdminGetUserByPhoto,
+    AdminGetUserByPhoto, AdminSendMessageFromUserById, AdminAddAdmin,
+    AdminDeleteAdmin
 )
 
 from utils.search_photo import compare_images
@@ -53,6 +55,7 @@ from utils.scheduler import start_schedule
 
 load_dotenv()
 token = os.getenv('TOKEN')
+main_admin = os.getenv('MAIN_ADMIN')
 
 bot = Bot(token=token)
 dp = Dispatcher(bot, storage=MemoryStorage())
@@ -64,7 +67,7 @@ dict_of_profiles = {}
 async def cmd_start(msg: types.Message):
     await bot.send_message(
             msg.from_user.id, 
-            'Привет, ты попал в ... Мы поможем тебе найти кого-нибудь найти.'
+            'Привет, ты попал в Link Up Students | Калининград\n Мы поможем тебе найти кого-нибудь найти.'
             )
     if await has_register(str(msg.from_user.id)):
         await menu(msg)
@@ -225,7 +228,7 @@ async def register_course(msg: types.Message, state: FSMContext):
 
             await bot.send_message(
                 msg.from_user.id, 
-                'И напоследок, Пришлите мне вашу фотографию!'
+                'Пришлите мне вашу фотографию!'
                 )
 
             await Register_new_user.next()
@@ -253,16 +256,70 @@ async def register_description(msg: types.Message, state: FSMContext):
              'Фотография успешно добавлена'
              )
         
-        await end_registration(msg, data)
-        await state.finish()
+        cached_data[user_id] = await bot.send_message(
+                                    msg.from_user.id,
+                                    'И напоследок, введите реферальный промокод, если у тебя он есть',
+                                    reply_markup=promocode_is_empty()
+                                )
+        
+        await Register_new_user.next()
+        # await end_registration(msg, data)
+        # await state.finish()
     except Exception as e:   
         logging.error(f'Ошибка в регистрации при сохранении фото у пользователя {user_id}', exc_info=True) 
         await bot.send_message(
             msg.from_user.id, 
-            'Произошла ошибка сохранения, попробуйте снова'
+            'Возникла ошибка. Попробуйте еще раз'
             )
         return
     
+@dp.message_handler(state=Register_new_user.promocod)
+async def registration_promocode(msg: types.Message, state: FSMContext):
+    user_id = str(msg.from_user.id)
+    if msg.text.isdigit():
+        if user_id in cached_data:
+            await cached_data[user_id].delete()
+            del cached_data[user_id]
+        if await has_register(msg.text):
+            async with state.proxy() as data:
+                data["promocode"] = msg.text
+            await bot.send_message(
+                msg.from_user.id,
+                'Ваш промокод успешно активирован!\n\nВаша анкета получила буст на 24 часа!'
+            )
+            await bot.send_message(
+                data['promocode'],
+                'По вашему реферальному промокоду зарегистрировался пользователь\n\nВаша анкета получила буст на 24 часа!'
+            )
+            await end_registration(msg, data)
+            await state.finish()
+        elif not(await has_register(msg.text)):
+            cached_data[user_id] = await bot.send_message(
+                msg.from_user.id,
+                'Такого промокода не существует, попробуйте еще раз...',
+                reply_markup=promocode_is_empty()
+            )
+            return
+    else:
+        cached_data[user_id] = await bot.send_message(
+            msg.from_user.id,
+            'Промокод может состоять только из цифр, попробуйте еще раз...',
+            reply_markup=promocode_is_empty()
+        )
+        return
+    
+@dp.callback_query_handler(state=Register_new_user.promocod)
+async def registration_promocode_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    if user_id in cached_data:
+        await cached_data[user_id].delete()
+        del cached_data[user_id]
+    async with state.proxy() as data:
+        data["promocode"] = ''
+    await end_registration(callback_query, data)
+    await state.finish()
+        
+
 async def end_registration(msg: types.Message, data):
     datas = {
         "name": data["name"],
@@ -320,14 +377,14 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
         if save:
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Ваш профиль успешно создан!',
+                'Отлично! Надеюсь вы хорошо проведете время ;) Начинай общаться!',
                 reply_markup=reg_menu()
             )
             
         else:
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Что-то пошло не так, попробуйте снова'
+                'Возникла ошибка. Попробуйте еще раз'
             )
             await register_or_update_user(callback_query.message)
 
@@ -336,7 +393,7 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
             logging.error(f'Ошибка в окончании регистрации у пользователя {str(callback_query.from_user.id)}', exc_info=True)
             await bot.send_message(
                  callback_query.from_user.id,
-                 'Что-то пошло не так, давай попробуем снова('
+                 'Возникла ошибка. Попробуйте еще раз'
             )
             await register_or_update_user(callback_query.message)
 
@@ -364,16 +421,40 @@ async def menu(msg: types.Message):
         else:
             await bot.send_message(
                 msg.from_user.id,
-                f'Ошибка базы данных',
+                f'Возникла ошибка. Попробуйте еще раз',
             )
              
     except Exception as e:
         logging.error(f'Ошибка в главном меню у пользователя {str(msg.from_user.id)}', exc_info=True)
         await bot.send_message(
                 msg.from_user.id,
-                f'Ошибка базы данных: {e}',
+                'Возникла ошибка. Попробуйте еще раз',
             )
         
+
+@dp.message_handler(Text('🆘 Поддержка'))
+async def support(msg: types.Message):
+    await bot.send_message(
+        msg.from_user.id,
+        'Выберите действие',
+        reply_markup=support_kb()
+    )
+
+@dp.callback_query_handler(lambda c: 'support' in c.data)
+async def support_callback(callback_query: types.CallbackQuery):
+    cause = callback_query.data.split(':')[1]
+    match cause:
+        case 'instruction':
+            await bot.send_message(
+                callback_query.from_user.id,
+                'Cсылка на инструкцию:\n\nhttps://telegra.ph/Instrukciya-k-botu-LinkUp-03-11'
+            )
+        case 'contact':
+            await bot.send_message(
+                callback_query.from_user.id,
+                'Столкнулись с проблемой, хотите предложить что-то новое:\n\n@LinkUp_admin'
+            )
+
 
 ############# Анкета #############
 
@@ -426,7 +507,7 @@ async def change_ask(callback_query: types.CallbackQuery):
             await Change_photo.photo.set()
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Отправьте фотографию'
+                'Отправьте мне новую фотографию'
             )
         case 'description':
             await callback_query.message.delete()
@@ -455,7 +536,7 @@ async def state_change_photo(msg: types.Message, state: FSMContext):
         await state.finish()
         await bot.send_message(
             msg.from_user.id, 
-            'Фотография успешно добавлена'
+            'Фотография успешно обновлена'
             )
         await my_profile(msg)
     except Exception as e:
@@ -511,16 +592,17 @@ async def state_change_description(msg: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == 'disable_active')
 async def disable_active(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
+    user = await get_user_by_id(user_id)
     await update_active_to_false(user_id)
     for user in dict_of_profiles.copy():
         if user_id in user["profiles_list"]:
             user["profiles_list"].remove(user_id)
     await bot.send_message(
         callback_query.from_user.id,
-        'Мы отключили вашу анкету, надеюсь вы кого-нибудь нашли)'
+        f'Рад был помочь, {user["name"]}!\nНадеюсь, ты нашел кого-то благодаря мне'
     )
 
-@dp.message_handler(Text('Последняя активность'))
+@dp.message_handler(Text('📚 История'))
 async def last_activity(msg: types.Message, page=0):
     user_id = str(msg.from_user.id)
     user = await get_user_by_id(user_id)
@@ -563,7 +645,6 @@ async def last_activity(msg: types.Message, page=0):
 @dp.callback_query_handler(lambda c: 'history_like' in c.data)
 async def like_history_dislike(callback_query: types.CallbackQuery):
     page = callback_query.data.split(':')[1]
-    print('заход')
     user_id = str(callback_query.from_user.id)
     whom = dict_of_profiles[user_id]["history_dislike"][int(page)]
     dict_of_profiles[whom]["who_like"].append(user_id)
@@ -575,7 +656,7 @@ async def like_history_dislike(callback_query: types.CallbackQuery):
     )
     await bot.send_message(
         callback_query.from_user.id,
-        'Сердечко успешно отправлено)))',
+        'Реакция успешно отправлена, ждем ответа...',
     )
 
 @dp.callback_query_handler(lambda c: 'history_dislike_next' in c.data)
@@ -616,6 +697,11 @@ async def search_love_reg(msg: types.Message):
                     "history_dislike": [],
                     "who_like": [],
                 }
+            for user in dict_of_profiles:
+                if user != user_id:
+                    if len(dict_of_profiles[user]['profiles_list']) != 0:
+                        place = random.randint(0, len(dict_of_profiles[user]['profiles_list']))
+                        dict_of_profiles[user]['profiles_list'].insert(place, user_id)
             await search_love_step1(msg)
         else:
             if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
@@ -633,7 +719,7 @@ async def search_love_reg(msg: types.Message):
                 else:
                     await bot.send_message(
                         msg.from_user.id,
-                        'Пользователи не найдены'
+                        'На данный момент у нас нет подходящих анкет для вас'
                     )
             else:
                 await search_love_step1(msg)
@@ -673,7 +759,7 @@ async def search_love_step1(msg: types.Message):
     if list_of_profiles == 'Пользователи не найдены':
         await bot.send_message(
             msg.from_user.id,
-            'Пользователи не найдены',
+            'На данный момент у нас нет подходящих анкет для вас',
             reply_markup=search_kb()
         )
         
@@ -712,7 +798,7 @@ async def like_main(msg: types.Message):
 
             await bot.send_message(
                 msg.from_user.id,
-                'Сердечко успешно отправлено)))',
+                'Сердечко успешно отправлено, ждем ответа пользователя...',
             )
 
             await search_love_step1(msg)
@@ -722,7 +808,12 @@ async def like_main(msg: types.Message):
                 'Ваша анкета была заблокирована'
             )
     except Exception as e:
+        await bot.send_message(
+            msg.from_user.id,
+            'Что-то пошло не так, уже чиним...'
+        )
         logging.error(user_id, exc_info=True)
+        await search_love_step1(msg)
     
 @dp.message_handler(Text('👎'))
 async def dislike_main(msg: types.Message):
@@ -746,7 +837,6 @@ async def dislike_main(msg: types.Message):
 @dp.message_handler(Text('💤'))
 async def sleep_main(msg: types.Message):
     user_id = str(msg.from_user.id)
-    dict_of_profiles[user_id]["last_activity"] = int(time.time())
     await menu(msg)
 
 
@@ -784,20 +874,21 @@ async def like_liked(msg: types.Message):
         dict_of_profiles[str(msg.from_user.id)]["who_like"].pop()
         await bot.send_message(
             who_like_id,
-            f'У вас взаимная симпатия,\n Надеюсь что-то у вас выйдет()()()(): @{user_like["user_name"]} '
+            f'У вас взаимная симпатия,\n скорее начинайте общаться: @{user_like["user_name"]}\n\nДавай смотреть анкеты дальше',
+            reply_markup=reminder_kb()
         )
         await bot.send_message(
             msg.from_user.id, 
-            f'Надеюсь что-то у вас выйдет()()()(): @{user["user_name"]}'
+            f'Скорее начинайте общаться: @{user["user_name"]}'
         )
         if len(dict_of_profiles[str(msg.from_user.id)]["who_like"]) != 0:
             await show_like(msg)
         else:
             await bot.send_message(
                 msg.from_user.id,
-                'Вы вернулись к просмотрю анкет)'
+                'На этом все, давай смотреть анкеты дальше',
+                reply_markup=reminder_kb()
             )
-        await search_love_step1(msg)
     elif user["is_blocked"]:
         await bot.send_message(
             msg.from_user.id,
@@ -816,19 +907,20 @@ async def dislike_liked(msg: types.Message):
         else:
             await bot.send_message(
                 msg.from_user.id,
-                'Вы вернулись к просмотрю анкет)'
+                'На этом все, давай смотреть анкеты дальше',
+                reply_markup=reminder_kb()
             )
-            await search_love_step1(msg)
     elif user["is_blocked"]:
         await bot.send_message(
             msg.from_user.id,
             'Ваша анкета была заблокирована'
         )
-
+@dp.message_handler(Text('❗️'))
 @dp.message_handler(Text('⚠️'))
 async def search_report(msg: types.Message):
     user_id = str(msg.from_user.id)
     dict_of_profiles[user_id]["last_activity"] = int(time.time())
+    cached_data[user_id] = msg.text
     await bot.send_message(
         msg.from_user.id, 
         'Укажите причину жалобы:',
@@ -839,9 +931,13 @@ async def search_report(msg: types.Message):
 async def report_callback(callback_query: types.CallbackQuery):
     user_id = str(callback_query.from_user.id)
     report = callback_query.data.split(':')[1]
-    report_user_id = dict_of_profiles[user_id]["profiles_list"][-1] 
-    if report != 'cancel':
+    if cached_data[user_id] == '❗️':
+        report_user_id = dict_of_profiles[user_id]["who_like"][-1] 
+        dict_of_profiles[user_id]["who_like"].pop()
+    elif cached_data[user_id] == '⚠️':      
+        report_user_id = dict_of_profiles[user_id]["profiles_list"][-1] 
         dict_of_profiles[user_id]["profiles_list"].pop()
+    if report != 'cancel':
         list_of_admins = await get_list_of_admins()
         for admin_id in list_of_admins:
             await bot.send_message(
@@ -906,17 +1002,18 @@ async def filter(msg: types.Message):
             data["to_education"] = 'Любая'
     await bot.send_message(
         msg.from_user.id,
-        f'Ваши фильтры:\n\n\
-Учебное заведение - {university}\n\
-Форма обучения - {data["to_education"]}\n\
-Курс обучения - {"Любой" if data["to_course"] == 0 else data["to_course"]}\n\
-Максимальный возраст - {"Любой" if data["max_age"] == 0 else data["max_age"]}\n\
-Минимальный возраст - {"Любой" if data["min_age"] == 0 else data["min_age"]}\n\n\
+        f'<b>Ваши фильтры:</b>\n\n\
+<i>Учебное заведение</i> - {university}\n\
+<i>Форма обучения</i> - {data["to_education"]}\n\
+<i>Курс обучения</i> - {"Любой" if data["to_course"] == 0 else data["to_course"]}\n\
+<i>Максимальный возраст</i> - {"Любой" if data["max_age"] == 0 else data["max_age"]}\n\
+<i>Минимальный возраст</i> - {"Любой" if data["min_age"] == 0 else data["min_age"]}\n\n\
 Что вы хотите поменять?' ,
-        reply_markup=filters_main_kb()
+        reply_markup=filters_main_kb(),
+        parse_mode='HTML'
     )
 
-@dp.message_handler(Text('Возраст'))
+@dp.message_handler(Text('🔞 Возр.диапазон'))
 async def update_filter_age(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
@@ -1013,7 +1110,7 @@ async def filter_age_cancel(callback_query: types.CallbackQuery, state: FSMConte
 
 
 
-@dp.message_handler(Text('Уч. заведение'))
+@dp.message_handler(Text('👨‍🎓 Уч. заведение'))
 async def update_filter_university(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
@@ -1038,7 +1135,7 @@ async def state_filter_university(callback_query: types.CallbackQuery, state: FS
     await state.finish()
     await filter(callback_query)
 
-@dp.message_handler(Text('Курс'))
+@dp.message_handler(Text('1️⃣ Курс 1'))
 async def update_filter_course(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
@@ -1092,7 +1189,7 @@ async def filter_course_all(callback_query: types.CallbackQuery, state: FSMConte
 
 
 
-@dp.message_handler(Text('Форма обучения'))
+@dp.message_handler(Text('📕 Форма обучения'))
 async def update_filter_education(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
@@ -1134,8 +1231,140 @@ async def login_admin(msg: types.Message):
 "/get_statistic"\n\
 "/spam"\n\
 "/get_user_by_photo"\n\
-"/send_message_form_user_by_id"'
+"/send_message_from_user_by_id"\n\
+"/add_admin"\n\
+"/delete_admin"\n\
+"/get_backups"'
         )
+
+
+@dp.message_handler(commands='get_backups')
+async def admin_get_backups(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        with open('static/backups/database.sql', 'rb') as file:
+            await bot.send_document(msg.from_user.id, document=file)
+        with open('static/backups/dump.json', 'rb') as file:
+            await bot.send_document(msg.from_user.id, document=file)
+
+
+@dp.message_handler(commands='add_admin')
+async def admin_add_admin(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        if user_id == main_admin:
+            await AdminAddAdmin.user_id.set()
+            await bot.send_message(
+                msg.from_user.id,
+                'Введите id пользователя'
+            )
+
+@dp.message_handler(state=AdminAddAdmin.user_id)
+async def state_admin_add_admin(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["user_id"] = msg.text
+    await add_admin_db(user_id=data["user_id"])
+    await bot.send_message(
+        msg.from_user.id,
+        'Админ успешно добавлен'
+    )
+    await state.finish()
+
+
+@dp.message_handler(commands='delete_admin')
+async def admin_delete_admin(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        if user_id == main_admin:
+            await AdminDeleteAdmin.user_id.set()
+            await bot.send_message(
+                msg.from_user.id,
+                'Введите id пользователя'
+            )
+
+@dp.message_handler(state=AdminDeleteAdmin.user_id)
+async def state_admin_delete_admin(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["user_id"] = msg.text
+    await delete_admin_db(user_id=data["user_id"])
+    await bot.send_message(
+        msg.from_user.id,
+        'Админ успешно удален'
+    )
+    await state.finish()
+
+
+
+@dp.message_handler(commands='send_message_from_user_by_id')
+async def admin_send_message_from_user_by_id(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await AdminSendMessageFromUserById.user_id.set()
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите user_id пользователя, которому хотите отправить сообщение'
+        )
+
+@dp.message_handler(state=AdminSendMessageFromUserById.user_id)
+async def state_admin_send_message_from_user_by_id_step1(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["user_id"] = msg.text
+    await bot.send_message(
+        msg.from_user.id,
+        'Введите сообщение, которое хотите отправить пользователю'
+    )
+    await AdminSendMessageFromUserById.next()
+
+@dp.message_handler(state=AdminSendMessageFromUserById.message)
+async def state_admin_send_message_from_user_by_id_step2(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["message"] = msg.text
+    await bot.send_message(
+        msg.from_user.id,
+        'Подтвердите действие "Да/Нет"'
+    )
+    await AdminSendMessageFromUserById.next()
+
+@dp.message_handler(state=AdminSendMessageFromUserById.confirmation)
+async def state_admin_send_message_from_user_by_id_step3(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        try:
+            async with state.proxy() as data:
+                data["confirmation"] = msg.text
+            await bot.send_message(
+                int(data["user_id"]),
+                data["message"]
+            )
+            await bot.send_message(
+                msg.from_user.id,
+                'Сообщение успешно отправлено'
+            )
+        except Exception as e:
+            await state.finish()
+            await bot.send_message(
+                msg.from_user.id,
+                'Что-то пошло не так'
+            )   
+        await state.finish()
+    elif msg.text.lower() == 'нет':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return
+
 
 
 @dp.message_handler(commands=['block_user'])

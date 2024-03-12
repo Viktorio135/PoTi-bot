@@ -60,10 +60,15 @@ def description_is_empty():
     keyboard = InlineKeyboardMarkup().add(btn1)
     return keyboard
 
+def promocode_is_empty():
+    btn1 = InlineKeyboardButton(text='Оставить пустым', callback_data='promocode_is_empty')
+    keyboard = InlineKeyboardMarkup().add(btn1)
+    return keyboard
+
 def end_registration_kb(file_id):
     
     btn1 = InlineKeyboardButton(text='Всё верно!', callback_data=f'end_registration:{file_id}')
-    btn2 = InlineKeyboardButton('Заполнить заново:(', callback_data='repeat_registration')
+    btn2 = InlineKeyboardButton('Заполнить заново', callback_data='repeat_registration')
     keyboard = InlineKeyboardMarkup().add(btn1).add(btn2)
     return keyboard
 
@@ -71,9 +76,19 @@ def menu_kb():
     btn1 = KeyboardButton(text='👤 Моя анекта')
     btn2 = KeyboardButton(text='🚀 Cмотреть анкеты')
     btn3 = KeyboardButton(text='⚙️ Фильтры')
-    btn4 = KeyboardButton(text='Последняя активность')
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn2).row(btn1, btn4, btn3)
+    btn4 = KeyboardButton(text='📚 История')
+    btn5 = KeyboardButton(text='🆘 Поддержка')
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(btn2).row(btn5, btn4, btn3).row(btn1)
     return keyboard
+
+
+def support_kb():
+    btn1 = InlineKeyboardButton(text='📔 Инструкция', callback_data='support:instruction')
+    btn2 = InlineKeyboardButton(text='✍️ Связаться с нами', callback_data='support:contact')
+    keyboard = InlineKeyboardMarkup().add(btn1).add(btn2)
+    return keyboard
+
+
 
 def reminder_kb():
     btn1 = KeyboardButton(text='🚀 Cмотреть анкеты')
@@ -87,16 +102,16 @@ def reg_menu():
     return keyboard
 
 def my_profile_kb():
-    btn1 = InlineKeyboardButton(text='Заполнить анкету заново', callback_data='repeat_profile')
-    btn2 = InlineKeyboardButton(text='Изменить анкету', callback_data='change_profile')
-    btn3 = InlineKeyboardButton(text='Я больше не хочу никого искать ', callback_data='disable_active')
+    btn1 = InlineKeyboardButton(text='🗑️ Заполнить заново', callback_data='repeat_profile')
+    btn2 = InlineKeyboardButton(text='🖊️ Изменить', callback_data='change_profile')
+    btn3 = InlineKeyboardButton(text='🛑 Я больше не хочу никого искать', callback_data='disable_active')
     keyboard = InlineKeyboardMarkup().add(btn1).add(btn2).add(btn3)
     return keyboard
 
 
 def change_profile_kb():
-    btn1 = InlineKeyboardButton(text='Фото', callback_data='change_ask:photo')
-    btn2 = InlineKeyboardButton(text='Описание', callback_data='change_ask:description')
+    btn1 = InlineKeyboardButton(text='📷 Фото', callback_data='change_ask:photo')
+    btn2 = InlineKeyboardButton(text='📝 Описание', callback_data='change_ask:description')
     # btn3 = InlineKeyboardButton(text='Возраст', callback_data='change_ask:age')
     # btn4 = InlineKeyboardButton(text='Курс', callback_data='change_ask:cource')
     keyboard = InlineKeyboardMarkup().add(btn1, btn2)
@@ -124,10 +139,10 @@ def like_kb():
 
 
 def filters_main_kb():
-    btn1 = KeyboardButton('Возраст')
-    btn2 = KeyboardButton('Уч. заведение')
-    btn3 = KeyboardButton('Курс')
-    btn4 = KeyboardButton('Форма обучения')
+    btn1 = KeyboardButton('🔞 Возр.диапазон')
+    btn2 = KeyboardButton('👨‍🎓 Уч. заведение')
+    btn3 = KeyboardButton('1️⃣ Курс')
+    btn4 = KeyboardButton('📕 Форма обучения')
     btn5 = KeyboardButton('⏪️ Назад')
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).row(btn1, btn2).row(btn3, btn4).row(btn5)
     return keyboard
@@ -164,10 +179,10 @@ def history_dislike_kb(has_nexn, has_last, page):
 
 
 def report_kb():
-    btn1 = InlineKeyboardButton(text='🔞 Порнография 🔞', callback_data=f'report:adults')
-    btn2 = InlineKeyboardButton(text='💊 Наркотики 💊', callback_data=f'report:drugs')
-    btn3 = InlineKeyboardButton(text='💰 Скам 💰', callback_data=f'report:scum')    
-    btn4 = InlineKeyboardButton(text='🦨 Другое 🦨', callback_data=f'report:other')
-    btn5 = InlineKeyboardButton(text='❌ Отмена ❌', callback_data='report:cancel')
+    btn1 = InlineKeyboardButton(text='🔞 Порнография', callback_data=f'report:adults')
+    btn2 = InlineKeyboardButton(text='💊 Наркотики', callback_data=f'report:drugs')
+    btn3 = InlineKeyboardButton(text='💰 Скам', callback_data=f'report:scum')    
+    btn4 = InlineKeyboardButton(text='🦨 Другое', callback_data=f'report:other')
+    btn5 = InlineKeyboardButton(text='❌ Отмена', callback_data='report:cancel')
     keyboard = InlineKeyboardMarkup().add(btn1, btn2).add(btn3, btn4).add(btn5)
     return keyboard

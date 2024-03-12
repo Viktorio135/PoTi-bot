@@ -66,7 +66,6 @@ def delete_profile(user_id):
             session.commit()
             return 1
         except Exception as e:
-            print(e)
             return 0
 
 @sync_to_async
@@ -148,7 +147,7 @@ def get_list_of_profiles(
             obj = session.query(User).filter(User.user_id == user_id).first()
             list_of_profiles = []
             whom = obj.search_to
-            users = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False)
+            users = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False).filter(User.user_id != user_id)
             if to_education != 'all':
                 users = users.filter(User.education == to_education)
             if to_university != 3:
@@ -233,9 +232,7 @@ def change_age_by_id(user_id: str, age: int):
 async def get_user_by_id(user_id, Anketa=False):
     with Session(autoflush=False, bind=engine) as session:
         obj = session.query(User).filter(User.user_id == user_id).first()
-        
         if obj is not None:
-        
             try:
                 data = {
                     "name": obj.name,
@@ -256,7 +253,6 @@ async def get_user_by_id(user_id, Anketa=False):
                     "is_blocked": obj.is_blocked,
                     "is_active": obj.is_active,
                 }
-
                 match data["education"]:
                     case 'spo':
                         data["education"] = 'СПО'
@@ -266,7 +262,6 @@ async def get_user_by_id(user_id, Anketa=False):
                         data["education"] = 'Специалитет'
                     case 'magistratura':
                         data["education"] = 'Магистратура'
-
                 if not Anketa:
                     return data
                 elif Anketa:
@@ -342,3 +337,18 @@ def get_list_of_users_for_spam_db():
     return users
 
 
+@sync_to_async
+def add_admin_db(user_id):
+    with Session(autoflush=False, bind=engine) as session:
+        new_admin = Admins(user_id=user_id)
+        session.add(new_admin)
+        session.commit()
+        return 1
+    
+
+@sync_to_async
+def delete_admin_db(user_id):
+    with Session(autoflush=False, bind=engine) as session:
+        session.query(Admins).filter(Admins.user_id == user_id).delete()
+        session.commit()
+        return 1

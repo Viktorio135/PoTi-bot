@@ -13,6 +13,7 @@ class Register_new_user(StatesGroup):
     speciality = State()
     course = State()
     photos = State()
+    promocod = State()
 
 class Filter_age(StatesGroup):
     age = State()

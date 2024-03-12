@@ -27,3 +27,14 @@ class AdminSpamOnlyText(StatesGroup):
 
 class AdminGetUserByPhoto(StatesGroup):
     path = State()
+
+class AdminSendMessageFromUserById(StatesGroup):
+    user_id = State()
+    message = State()
+    confirmation = State()
+
+class AdminAddAdmin(StatesGroup):
+    user_id = State()
+
+class AdminDeleteAdmin(StatesGroup):
+    user_id = State()

@@ -65,7 +65,6 @@ class Admins(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(String(50))
-    is_main_admin = Column(Boolean(), default=False)
 
 
 def start_db():
