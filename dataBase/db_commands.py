@@ -252,6 +252,8 @@ async def get_user_by_id(user_id, Anketa=False):
                     "min_age": obj.min_age,
                     "is_blocked": obj.is_blocked,
                     "is_active": obj.is_active,
+                    "user_id": obj.user_id,
+                    "search_to": obj.search_to,
                 }
                 match data["education"]:
                     case 'spo':
@@ -352,3 +354,26 @@ def delete_admin_db(user_id):
         session.query(Admins).filter(Admins.user_id == user_id).delete()
         session.commit()
         return 1
+    
+@sync_to_async
+def add_university_db(name):
+    try:
+        with Session(autoflush=False, bind=engine) as session:
+            new_university = University(name=name)
+            session.add(new_university)
+            session.commit()
+            return 1
+    except Exception as e:
+        logging.error('Ошибка при добавлении университета', exc_info=True)
+        return 0
+    
+@sync_to_async
+def delete_university_db(name):
+    try:
+        with Session(autoflush=False, bind=engine) as session:
+            session.query(University).filter(University.name == name).delete()
+            session.commit()
+            return 1
+    except Exception as e:
+        logging.error('Ошибка при удалении университета', exc_info=True)
+        return 0

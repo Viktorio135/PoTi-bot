@@ -38,3 +38,11 @@ class AdminAddAdmin(StatesGroup):
 
 class AdminDeleteAdmin(StatesGroup):
     user_id = State()
+
+class AdminAddUniversity(StatesGroup):
+    name = State()
+    confirmation = State()
+
+class AdminDeleteUniversity(StatesGroup):
+    name = State()
+    confirmation = State()

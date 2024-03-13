@@ -21,7 +21,7 @@ from dataBase.db_commands import (
     update_filter_cource, update_filter_education_db, change_description_by_id,
     change_age_by_id, get_list_of_admins, block_user_db,
     unblock_user_db, get_statistic_user_db, get_list_of_users_for_spam_db,
-    add_admin_db, delete_admin_db
+    add_admin_db, delete_admin_db, add_university_db, delete_university_db
 )
 from keyboards import (
     select_sex, select_university, select_education, 
@@ -43,7 +43,7 @@ from states.admin_states import (
     AdminBlockUser, AdminUnblockUser, AdminGetUserById,
     AdminSpamHasPhoto, AdminSpamOnlyText, AdminSpamWithPhoto,
     AdminGetUserByPhoto, AdminSendMessageFromUserById, AdminAddAdmin,
-    AdminDeleteAdmin
+    AdminDeleteAdmin, AdminAddUniversity, AdminDeleteUniversity
 )
 
 from utils.search_photo import compare_images
@@ -241,7 +241,7 @@ async def register_course(msg: types.Message, state: FSMContext):
 
 
 @dp.message_handler(content_types=['photo'], state=Register_new_user.photos)
-async def register_description(msg: types.Message, state: FSMContext):
+async def register_photo(msg: types.Message, state: FSMContext):
     user_id = str(msg.from_user.id)
     try:
         file_name = f'{msg.from_user.id}.jpg'
@@ -255,6 +255,7 @@ async def register_description(msg: types.Message, state: FSMContext):
              msg.from_user.id, 
              'Фотография успешно добавлена'
              )
+        await Register_new_user.next()
         
         cached_data[user_id] = await bot.send_message(
                                     msg.from_user.id,
@@ -262,7 +263,7 @@ async def register_description(msg: types.Message, state: FSMContext):
                                     reply_markup=promocode_is_empty()
                                 )
         
-        await Register_new_user.next()
+        
         # await end_registration(msg, data)
         # await state.finish()
     except Exception as e:   
@@ -316,8 +317,9 @@ async def registration_promocode_callback(callback_query: types.CallbackQuery, s
         del cached_data[user_id]
     async with state.proxy() as data:
         data["promocode"] = ''
-    await end_registration(callback_query, data)
     await state.finish()
+    await end_registration(callback_query, data)
+    
         
 
 async def end_registration(msg: types.Message, data):
@@ -335,6 +337,16 @@ async def end_registration(msg: types.Message, data):
         }
     file_id = hash(json.dumps(datas, sort_keys=True))
     cached_data[file_id] = datas
+
+    match datas["education"]:
+        case 'spo':
+            datas["education"] = 'СПО'
+        case 'bakalavriat':
+            datas["education"] = 'Бакалавриат'
+        case 'specialitet':
+            datas["education"] = 'Специалитет'
+        case 'magistratura':
+            datas["education"] = 'Магистратура'
 
     await bot.send_message(msg.from_user.id, 
             f'Ты успешно завершил, твой профиль будет выглядеть вот так:'
@@ -386,7 +398,7 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
                 callback_query.from_user.id, 
                 'Возникла ошибка. Попробуйте еще раз'
             )
-            await register_or_update_user(callback_query.message)
+            await register_or_update_user(callback_query)
 
 
     except Exception as e:
@@ -415,7 +427,7 @@ async def menu(msg: types.Message):
         if user != 'Error' and user != 'User not found':
             await bot.send_message(
                 msg.from_user.id,
-                f'{user["name"]}, ты попал в главное меню, выбери действие;)',
+                f'{user["name"]}, вы попали в главное меню, выбери действие;)',
                 reply_markup=menu_kb()
             )
         else:
@@ -602,6 +614,17 @@ async def disable_active(callback_query: types.CallbackQuery):
         f'Рад был помочь, {user["name"]}!\nНадеюсь, ты нашел кого-то благодаря мне'
     )
 
+@dp.callback_query_handler(lambda c: c.data == 'referal_code')
+async def call_referal_code(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    user = await get_user_by_id(user_id)
+    await bot.send_message(
+        callback_query.from_user.id,
+        f'Твой реферальный промокод:\n\n{user["user_id"]}\n\nПри регистрации нового пользователя по твоему реферальному промокоду, ваша анкета и анкета пользоватлея, который зарегистрировался получат буст на 24 часа!'
+    )
+
+###############
+
 @dp.message_handler(Text('📚 История'))
 async def last_activity(msg: types.Message, page=0):
     user_id = str(msg.from_user.id)
@@ -699,9 +722,12 @@ async def search_love_reg(msg: types.Message):
                 }
             for user in dict_of_profiles:
                 if user != user_id:
-                    if len(dict_of_profiles[user]['profiles_list']) != 0:
-                        place = random.randint(0, len(dict_of_profiles[user]['profiles_list']))
-                        dict_of_profiles[user]['profiles_list'].insert(place, user_id)
+                    new_user = await get_user_by_id(user_id)
+                    old_user = await get_user_by_id(user)
+                    if new_user["sex"] == old_user["search_to"]:
+                        if len(dict_of_profiles[user]['profiles_list']) != 0:
+                            place = random.randint(0, len(dict_of_profiles[user]['profiles_list']))
+                            dict_of_profiles[user]['profiles_list'].insert(place, user_id)
             await search_love_step1(msg)
         else:
             if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
@@ -1135,7 +1161,7 @@ async def state_filter_university(callback_query: types.CallbackQuery, state: FS
     await state.finish()
     await filter(callback_query)
 
-@dp.message_handler(Text('1️⃣ Курс 1'))
+@dp.message_handler(Text('1️⃣ Курс'))
 async def update_filter_course(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
@@ -1234,7 +1260,9 @@ async def login_admin(msg: types.Message):
 "/send_message_from_user_by_id"\n\
 "/add_admin"\n\
 "/delete_admin"\n\
-"/get_backups"'
+"/get_backups"\n\
+"/add_university"\n\
+"/delete_university"'
         )
 
 
@@ -1252,14 +1280,12 @@ async def admin_get_backups(msg: types.Message):
 @dp.message_handler(commands='add_admin')
 async def admin_add_admin(msg: types.Message):
     user_id = str(msg.from_user.id)
-    list_of_admins = await get_list_of_admins()
-    if user_id in list_of_admins:
-        if user_id == main_admin:
-            await AdminAddAdmin.user_id.set()
-            await bot.send_message(
-                msg.from_user.id,
-                'Введите id пользователя'
-            )
+    if user_id == main_admin:
+        await AdminAddAdmin.user_id.set()
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите id пользователя'
+        )
 
 @dp.message_handler(state=AdminAddAdmin.user_id)
 async def state_admin_add_admin(msg: types.Message, state: FSMContext):
@@ -1337,7 +1363,8 @@ async def state_admin_send_message_from_user_by_id_step3(msg: types.Message, sta
                 data["confirmation"] = msg.text
             await bot.send_message(
                 int(data["user_id"]),
-                data["message"]
+                data["message"],
+                reply_markup=reminder_kb()
             )
             await bot.send_message(
                 msg.from_user.id,
@@ -1532,15 +1559,21 @@ async def state_admin_get_user_by_id(msg: types.Message, state: FSMContext):
         data["user_id"] = msg.text
     user_with_anket = await get_user_by_id(data["user_id"], Anketa=True)
     user_data = await get_user_by_id(data["user_id"])
-    await bot.send_photo(
-        msg.from_user.id,
-        open(f'static/users_photo/{data["user_id"]}.jpg', 'rb'),
-        user_with_anket,
-    )
-    await bot.send_message(
-        msg.from_user.id,
-        user_data,
-    )
+    if user_data != 'User not found' and user_data != 'Error':
+        await bot.send_photo(
+            msg.from_user.id,
+            open(f'static/users_photo/{data["user_id"]}.jpg', 'rb'),
+            user_with_anket,
+        )
+        await bot.send_message(
+            msg.from_user.id,
+            user_data,
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Пользователь не найден'
+        )
     await state.finish()
 
 @dp.message_handler(commands=['get_statistic'])
@@ -1645,7 +1678,8 @@ async def state_admin_spam_with_photo_step2(msg: types.Message, state: FSMContex
                 await bot.send_photo(
                     user,
                     open(data["path"], 'rb'),
-                    data["spam_text"]
+                    data["spam_text"],
+                    reply_markup=reminder_kb()
                 )
                 count+=1
             except:
@@ -1701,7 +1735,8 @@ async def state_admin_spam_only_text_step2(msg: types.Message, state: FSMContext
             try:
                 await bot.send_message(
                     user,
-                    data["spam_text"]
+                    data["spam_text"],
+                    reply_markup=reminder_kb()
                 )
                 count+=1
             except:
@@ -1771,10 +1806,113 @@ async def state_admin_get_user_by_photo(msg: types.Message, state: FSMContext):
         )
         return
 
+@dp.message_handler(commands='add_university')
+async def admin_add_university(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите название университета'
+        )
+        await AdminAddUniversity.name.set()
+
+@dp.message_handler(state=AdminAddUniversity.name)
+async def state_admin_add_university_step1(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["name"] = msg.text
+    await bot.send_message(
+        msg.from_user.id,
+        'Подтвердите действие "Да/Нет"'
+    )
+    await AdminAddUniversity.next()
+
+@dp.message_handler(state=AdminAddUniversity.confirmation)
+async def state_admin_add_university_step2(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        add = await add_university_db(data["name"])
+        if add:
+            await bot.send_message(
+                msg.from_user.id,
+                'Университет успешно добавлен!'
+            )
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Что-то пошло не так'
+            )
+        await state.finish()
+    elif msg.text.lower() == 'нет':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return
 
 
 
+@dp.message_handler(commands='delete_university')
+async def admin_add_university(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        await bot.send_message(
+            msg.from_user.id,
+            'Введите название университета'
+        )
+        await AdminDeleteUniversity.name.set()
 
+@dp.message_handler(state=AdminDeleteUniversity.name)
+async def state_admin_add_university_step1(msg: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["name"] = msg.text
+    await bot.send_message(
+        msg.from_user.id,
+        'Подтвердите действие "Да/Нет"'
+    )
+    await AdminDeleteUniversity.next()
+
+@dp.message_handler(state=AdminDeleteUniversity.confirmation)
+async def state_admin_add_university_step2(msg: types.Message, state: FSMContext):
+    if msg.text.lower() == 'да':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        add = await delete_university_db(data["name"])
+        if add:
+            await bot.send_message(
+                msg.from_user.id,
+                'Университет успешно удален!'
+            )
+        else:
+            await bot.send_message(
+                msg.from_user.id,
+                'Что-то пошло не так'
+            )
+        await state.finish()
+    elif msg.text.lower == 'нет':
+        async with state.proxy() as data:
+            data["confirmation"] = msg.text
+        await state.finish()
+        await bot.send_message(
+            msg.from_user.id,
+            'Действие отменено'
+        )
+    else:
+        await bot.send_message(
+            msg.from_user.id,
+            'Нет такого варианта ответа, введите "Да/Нет"'
+        )
+        return
 
 # @dp.message_handler(commands='1357')
 # async def save_data(msg: types.Message):

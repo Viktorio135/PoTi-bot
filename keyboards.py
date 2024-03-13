@@ -104,8 +104,9 @@ def reg_menu():
 def my_profile_kb():
     btn1 = InlineKeyboardButton(text='🗑️ Заполнить заново', callback_data='repeat_profile')
     btn2 = InlineKeyboardButton(text='🖊️ Изменить', callback_data='change_profile')
-    btn3 = InlineKeyboardButton(text='🛑 Я больше не хочу никого искать', callback_data='disable_active')
-    keyboard = InlineKeyboardMarkup().add(btn1).add(btn2).add(btn3)
+    btn3 = InlineKeyboardButton(text='🔑 Мой реферальный промокод', callback_data='referal_code')
+    btn4 = InlineKeyboardButton(text='🛑 Я больше не хочу никого искать', callback_data='disable_active')
+    keyboard = InlineKeyboardMarkup().add(btn1).add(btn2).add(btn3).add(btn4)
     return keyboard
 
 
