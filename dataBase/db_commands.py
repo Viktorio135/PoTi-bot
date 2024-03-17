@@ -330,10 +330,13 @@ def get_statistic_user_db():
         
 
 @sync_to_async
-def get_list_of_users_for_spam_db():
+def get_list_of_users_for_spam_db(is_admin_search=False):
     with Session(autoflush=False, bind=engine) as session:
         users = []
-        objs = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False).all()
+        if not is_admin_search:
+            objs = session.query(User).filter(User.is_active == True).filter(User.is_blocked == False).all()
+        else:
+            objs = session.query(User).all()
         for user in objs:
             users.append(user.user_id)
     return users

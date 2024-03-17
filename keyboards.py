@@ -37,20 +37,41 @@ def select_education(is_filter=False):
 
 async def select_university(is_filter=False):
     universities = await read_university()
-
+    universities.remove('all')
     keyboard = InlineKeyboardMarkup()
 
     if not is_filter:
-        for university in universities:
-            if university != 'all':
-                btn = InlineKeyboardButton(text=university, callback_data=f'register_university:{university}')
-                keyboard.add(btn)
+        for university in range(0, len(universities), 3):
+            if universities[university] != 'all':
+                if (university + 1 < len(universities)) and (university + 2 < len(universities)):
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'register_university:{universities[university]}')
+                    btn2 = InlineKeyboardButton(text=universities[university+1], callback_data=f'register_university:{universities[university+1]}')
+                    btn3 = InlineKeyboardButton(text=universities[university+2], callback_data=f'register_university:{universities[university+2]}')
+                    keyboard.add(btn1, btn2, btn3)
+                elif (university + 1 < len(universities)) and (university + 2 >= len(universities)):
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'register_university:{universities[university]}')
+                    btn2 = InlineKeyboardButton(text=universities[university+1], callback_data=f'register_university:{universities[university+1]}')
+                    keyboard.add(btn1, btn2)
+                else:
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'register_university:{universities[university]}')
+                    keyboard.add(btn1)
         return keyboard
+#filter_university
     elif is_filter:
-        for university in universities:
-            if university != 'all':
-                btn = InlineKeyboardButton(text=university, callback_data=f'filter_university:{university}')
-                keyboard.add(btn)
+        for university in range(0, len(universities), 3):
+            if universities[university] != 'all':
+                if (university + 1 < len(universities)) and (university + 2 < len(universities)):
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'filter_university:{universities[university]}')
+                    btn2 = InlineKeyboardButton(text=universities[university+1], callback_data=f'filter_university:{universities[university+1]}')
+                    btn3 = InlineKeyboardButton(text=universities[university+2], callback_data=f'filter_university:{universities[university+2]}')
+                    keyboard.add(btn1, btn2, btn3)
+                elif (university + 1 < len(universities)) and (university + 2 >= len(universities)):
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'filter_university:{universities[university]}')
+                    btn2 = InlineKeyboardButton(text=universities[university+1], callback_data=f'filter_university:{universities[university+1]}')
+                    keyboard.add(btn1, btn2)
+                else:
+                    btn1 = InlineKeyboardButton(text=universities[university], callback_data=f'filter_university:{universities[university]}')
+                    keyboard.add(btn1)
         btn_all = InlineKeyboardButton(text='Все', callback_data='filter_university:all')
         keyboard.add(btn_all)
         return keyboard
@@ -117,6 +138,18 @@ def change_profile_kb():
     # btn4 = InlineKeyboardButton(text='Курс', callback_data='change_ask:cource')
     keyboard = InlineKeyboardMarkup().add(btn1, btn2)
     return keyboard
+
+def change_profile_photo_cancel():
+    btn1 = InlineKeyboardButton(text='❌ Отмена', callback_data='change_profile_photo_cancel')
+    keyboard = InlineKeyboardMarkup().add(btn1)
+    return keyboard
+
+def change_profile_description_cancel():
+    btn1 = InlineKeyboardButton(text='❌ Отмена', callback_data='change_profile_description_cancel')
+    btn2 = InlineKeyboardButton(text='Сделать пустым', callback_data='change_profile_description_empty')
+    keyboard = InlineKeyboardMarkup().add(btn2).add(btn1)
+    return keyboard
+
 
 def search_kb():
     btn1 = KeyboardButton('❤️')

@@ -30,7 +30,8 @@ from keyboards import (
     show_like_kb, like_kb, filters_main_kb,
     filter_cource_age_kb, history_dislike_kb, report_kb, 
     change_profile_kb, description_is_empty, reminder_kb,
-    support_kb, promocode_is_empty
+    support_kb, promocode_is_empty, change_profile_description_cancel,
+    change_profile_photo_cancel,
 )
 
 from states.user_states import (
@@ -519,14 +520,16 @@ async def change_ask(callback_query: types.CallbackQuery):
             await Change_photo.photo.set()
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Отправьте мне новую фотографию'
+                'Отправьте мне новую фотографию',
+                reply_markup=change_profile_photo_cancel()
             )
         case 'description':
             await callback_query.message.delete()
             await Change_description.description.set()
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Расскажите о себе'
+                'Расскажите о себе',
+                reply_markup=change_profile_description_cancel()
             )
         # case 'age':
         #     await callback_query.message.delete()
@@ -559,6 +562,18 @@ async def state_change_photo(msg: types.Message, state: FSMContext):
         )
         return
     
+@dp.callback_query_handler(lambda c: c.data == 'change_profile_photo_cancel', state=Change_photo.photo)
+async def state_change_photo_cancel(callback_query: types.CallbackQuery, state: FSMContext):
+    await callback_query.message.delete()
+    await state.finish()
+   
+    
+@dp.callback_query_handler(lambda c: c.data == 'change_profile_description_cancel', state=Change_description.description)
+async def state_change_description_cancel(callback_query: types.CallbackQuery, state: FSMContext):
+    await callback_query.message.delete()
+    await state.finish()
+    
+
 @dp.message_handler(state=Change_description.description)
 async def state_change_description(msg: types.Message, state: FSMContext):
     user_id = str(msg.from_user.id)
@@ -571,6 +586,19 @@ async def state_change_description(msg: types.Message, state: FSMContext):
         'Описание профиля успешно обновлено'
     )
     await my_profile(msg)
+
+@dp.callback_query_handler(lambda c: c.data == 'change_profile_description_empty', state=Change_description.description)
+async def dtate_change_description_empty(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = str(callback_query.from_user.id)
+    async with state.proxy() as data:
+        data["description"] = ''
+    await change_description_by_id(user_id, data["description"])
+    await state.finish()
+    await bot.send_message(
+        callback_query.from_user.id, 
+        'Описание профиля успешно обновлено'
+    )
+    await my_profile(callback_query)
 
 
 # @dp.message_handler(state=Change_age.age)
@@ -603,12 +631,12 @@ async def state_change_description(msg: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == 'disable_active')
 async def disable_active(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
+    user_id = str(callback_query.from_user.id)
     user = await get_user_by_id(user_id)
     await update_active_to_false(user_id)
-    for user in dict_of_profiles.copy():
-        if user_id in user["profiles_list"]:
-            user["profiles_list"].remove(user_id)
+    for users in dict_of_profiles:
+        if user_id in dict_of_profiles[users]["profiles_list"]:
+            dict_of_profiles[users]["profiles_list"].remove(user_id)
     await bot.send_message(
         callback_query.from_user.id,
         f'Рад был помочь, {user["name"]}!\nНадеюсь, ты нашел кого-то благодаря мне'
@@ -670,17 +698,23 @@ async def like_history_dislike(callback_query: types.CallbackQuery):
     page = callback_query.data.split(':')[1]
     user_id = str(callback_query.from_user.id)
     whom = dict_of_profiles[user_id]["history_dislike"][int(page)]
-    dict_of_profiles[whom]["who_like"].append(user_id)
-    who_len = len(dict_of_profiles[whom]["who_like"])
-    await bot.send_message(
-        whom,
-        'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
-        reply_markup=show_like_kb()
-    )
-    await bot.send_message(
-        callback_query.from_user.id,
-        'Реакция успешно отправлена, ждем ответа...',
-    )
+    if user_id not in dict_of_profiles[whom]["who_like"]:
+        dict_of_profiles[whom]["who_like"].append(user_id)
+        who_len = len(dict_of_profiles[whom]["who_like"])
+        await bot.send_message(
+            whom,
+            'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
+            reply_markup=show_like_kb()
+        )
+        await bot.send_message(
+            callback_query.from_user.id,
+            'Реакция успешно отправлена, ждем ответа...',
+        )
+    elif user_id in dict_of_profiles[whom]["who_like"]:
+        await bot.send_message(
+            callback_query.from_user.id,
+            'Мы все еще ждем ответ на прошлую реакцию...'
+        )
 
 @dp.callback_query_handler(lambda c: 'history_dislike_next' in c.data)
 async def next_history_dislike(callback_query: types.CallbackQuery):
@@ -812,20 +846,27 @@ async def like_main(msg: types.Message):
             dict_of_profiles[user_id]["last_activity"] = int(time.time())
             list_of_profiles = dict_of_profiles[user_id]["profiles_list"]
             like = list_of_profiles[-1]
-            dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
-            
-            who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
-            dict_of_profiles[user_id]["profiles_list"].pop()
-            await bot.send_message(
-                like,
-                'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
-                reply_markup=show_like_kb()
-            )
+            if user_id not in dict_of_profiles[list_of_profiles[-1]]["who_like"]:
+                dict_of_profiles[list_of_profiles[-1]]["who_like"].append(user_id)
+                
+                who_len = len(dict_of_profiles[list_of_profiles[-1]]["who_like"])
+                dict_of_profiles[user_id]["profiles_list"].pop()
+                await bot.send_message(
+                    like,
+                    'Вы понравились 1 человеку, показать его?' if who_len == 1 else f'Вы понравились {who_len} людям, показать их?',
+                    reply_markup=show_like_kb()
+                )
 
-            await bot.send_message(
-                msg.from_user.id,
-                'Сердечко успешно отправлено, ждем ответа пользователя...',
-            )
+                await bot.send_message(
+                    msg.from_user.id,
+                    'Сердечко успешно отправлено, ждем ответа пользователя...',
+                )
+            elif user_id in dict_of_profiles[list_of_profiles[-1]]["who_like"]:
+                dict_of_profiles[user_id]["profiles_list"].pop()
+                await bot.send_message(
+                    msg.from_user.id,
+                    'Мы до сих пор ждем ответа на прошлую реакцию...'
+                )
 
             await search_love_step1(msg)
         elif user["is_blocked"]:
@@ -1171,7 +1212,7 @@ async def update_filter_course(msg: types.Message):
     await Filter_course.cource.set()
 
 @dp.callback_query_handler(lambda c: c.data == 'filter_cource_cancle', state=Filter_course.cource)
-async def filter_age_cancel(callback_query: types.CallbackQuery, state: FSMContext):
+async def filter_cource_cancel(callback_query: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await bot.send_message(
         callback_query.from_user.id,
@@ -1782,7 +1823,7 @@ async def state_admin_get_user_by_photo(msg: types.Message, state: FSMContext):
                 data['path'] = path
         await msg.photo[-1].download(path)
         rezult, user = await compare_images(path)
-        if user is not None:
+        if user.isdigit():
             await bot.send_message(
                 msg.from_user.id,
                 rezult

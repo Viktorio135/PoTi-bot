@@ -5,7 +5,7 @@ from dataBase.db_commands import get_list_of_users_for_spam_db
 async def compare_images(image_path, tolerance=5):
 
     img1 = Image.open(image_path)
-    list_of_profiles = await get_list_of_users_for_spam_db()
+    list_of_profiles = await get_list_of_users_for_spam_db(is_admin_search=True)
     for user in list_of_profiles:
         img2 = Image.open(f'static/users_photo/{user}.jpg')
         hash1 = imagehash.average_hash(img1)
