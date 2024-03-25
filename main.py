@@ -6,8 +6,8 @@ import time
 import random
 
 from dotenv import load_dotenv
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
@@ -47,6 +47,7 @@ from states.admin_states import (
     AdminDeleteAdmin, AdminAddUniversity, AdminDeleteUniversity
 )
 
+from dataBase.dump import dump_dict_of_profiles, backup_bd
 from utils.search_photo import compare_images
 from dataBase.models import start_db
 from utils.scheduler import start_schedule
@@ -63,6 +64,7 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 
 cached_data = {}
 dict_of_profiles = {}
+
 
 @dp.message_handler(commands='start')
 async def cmd_start(msg: types.Message):
@@ -353,6 +355,17 @@ async def end_registration(msg: types.Message, data):
             f'Ты успешно завершил, твой профиль будет выглядеть вот так:'
         )
     university = await get_university_name_by_id(datas["university"])
+    if (msg.from_user.username == 'None') or (msg.from_user.username is None):
+        await bot.send_message(
+            msg.from_user.id,
+'''
+🚨🚨🚨🚨🚨🚨🚨🚨
+
+У вас в профиле телеграма не настроено имя пользователя (то что начинается с @). В связи с этим на вашу анкету не смогут отвечать другие пользователи. Для исправления этой проблемы необходимо установить имя пользователя в настройках телеграма и заполнить анкету в нашем боте заново!
+
+🚨🚨🚨🚨🚨🚨🚨🚨
+'''
+        )
     await bot.send_photo(
             msg.from_user.id, 
             open(f'static/users_photo/{msg.from_user.id}.jpg', 'rb'),
@@ -390,9 +403,9 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
         if save:
             await bot.send_message(
                 callback_query.from_user.id, 
-                'Отлично! Надеюсь вы хорошо проведете время ;) Начинай общаться!',
-                reply_markup=reg_menu()
+                'Отлично! Надеюсь вы хорошо проведете время ;) Начинай общаться!'
             )
+            await menu(callback_query)
             
         else:
             await bot.send_message(
@@ -408,7 +421,7 @@ async def save_user_to_bd(callback_query: types.CallbackQuery):
                  callback_query.from_user.id,
                  'Возникла ошибка. Попробуйте еще раз'
             )
-            await register_or_update_user(callback_query.message)
+            await register_or_update_user(callback_query)
 
 
 @dp.callback_query_handler(lambda c: c.data == 'repeat_registration')
@@ -499,7 +512,13 @@ async def my_profile(msg: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == 'repeat_profile')
 async def repeat_profile(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
     await delete_profile(callback_query.message.chat.id)
+    if user_id in dict_of_profiles:
+        del dict_of_profiles[user_id]
+    for users in dict_of_profiles:
+        if user_id in dict_of_profiles[users]["profiles_list"]:
+            dict_of_profiles[users]["profiles_list"].remove(user_id)
     await register_or_update_user(callback_query, is_new=True)
 
 
@@ -634,6 +653,8 @@ async def disable_active(callback_query: types.CallbackQuery):
     user_id = str(callback_query.from_user.id)
     user = await get_user_by_id(user_id)
     await update_active_to_false(user_id)
+    if user_id in dict_of_profiles:
+        del dict_of_profiles[user_id]
     for users in dict_of_profiles:
         if user_id in dict_of_profiles[users]["profiles_list"]:
             dict_of_profiles[users]["profiles_list"].remove(user_id)
@@ -758,10 +779,11 @@ async def search_love_reg(msg: types.Message):
                 if user != user_id:
                     new_user = await get_user_by_id(user_id)
                     old_user = await get_user_by_id(user)
-                    if new_user["sex"] == old_user["search_to"]:
-                        if len(dict_of_profiles[user]['profiles_list']) != 0:
-                            place = random.randint(0, len(dict_of_profiles[user]['profiles_list']))
-                            dict_of_profiles[user]['profiles_list'].insert(place, user_id)
+                    if (new_user != 'User not found') and (old_user != 'User not found'):
+                        if new_user["sex"] == old_user["search_to"]:
+                            if len(dict_of_profiles[user]['profiles_list']) != 0:
+                                place = random.randint(0, len(dict_of_profiles[user]['profiles_list']))
+                                dict_of_profiles[user]['profiles_list'].insert(place, user_id)
             await search_love_step1(msg)
         else:
             if len(dict_of_profiles[user_id]["profiles_list"]) == 0:
@@ -1006,10 +1028,10 @@ async def report_callback(callback_query: types.CallbackQuery):
         dict_of_profiles[user_id]["profiles_list"].pop()
     if report != 'cancel':
         list_of_admins = await get_list_of_admins()
-        for admin_id in list_of_admins:
+        for admin_id in list_of_admins:#обновить
             await bot.send_message(
                 admin_id,
-                f'На пользователя {report_user_id} была подана жалоба по причине "{report}"'
+                f'Пользователь {user_id} подал жалобу на {report_user_id} по причине "{report}"'
             )
         await bot.send_message(
             callback_query.from_user.id, 
@@ -1181,7 +1203,7 @@ async def filter_age_cancel(callback_query: types.CallbackQuery, state: FSMConte
 async def update_filter_university(msg: types.Message):
     await bot.send_message(
         msg.from_user.id,
-        'Выберете учебное заведение)',
+        'Выберите учебное заведение)',
         reply_markup=await select_university(is_filter=True)
     )
 
@@ -1268,6 +1290,16 @@ async def update_filter_education(msg: types.Message):
 async def state_filter_education(callback_query: types.CallbackQuery):
     user_id = str(callback_query.from_user.id)
     education = callback_query.data.split(':')[1]
+    match education:
+        case 'spo':
+            education = 'СПО'
+        case 'bakalavriat':
+            education = 'Бакалавриат'
+        case 'specialitet':
+            education = 'Специалитет'
+        case 'magistratura':
+            education = 'Магистратура'
+        
     await update_filter_education_db(user_id, education)
     await update_list_of_profiles_with_new_filters(callback_query)
     await bot.send_message(
@@ -1303,8 +1335,31 @@ async def login_admin(msg: types.Message):
 "/delete_admin"\n\
 "/get_backups"\n\
 "/add_university"\n\
-"/delete_university"'
+"/delete_university"\n\
+"/create_backups"'
         )
+
+
+
+@dp.message_handler(commands='create_backups')
+async def admin_create_backups(msg: types.Message):
+    user_id = str(msg.from_user.id)
+    list_of_admins = await get_list_of_admins()
+    if user_id in list_of_admins:
+        try:
+            await dump_dict_of_profiles(dict_of_profiles)
+            await backup_bd()
+            await bot.send_message(
+                msg.from_user.id,
+                'Бэкап успешно создан'
+            )
+        except Exception as e:
+            logging.error("Ошибка при бэкапе данных", exc_info=True)
+            await bot.send_message(
+                msg.from_user.id,
+                'что-то пошло не так'
+            )
+
 
 
 @dp.message_handler(commands='get_backups')
@@ -1487,33 +1542,40 @@ async def state_admin_block_user_step3(msg: types.Message, state: FSMContext):
             data["confirmation"] = msg.text
         block = await block_user_db(data["user_id"])
         if block:
+            blocked_user = await get_user_by_id(data["user_id"])
+            del dict_of_profiles[data["user_id"]]
+            for user in dict_of_profiles:
+                if data["user_id"] in dict_of_profiles[user]["profiles_list"]:
+                    dict_of_profiles[user]["profiles_list"].remove(data["user_id"])
             await bot.send_message(
                 msg.from_user.id, 
                 f'Пользователь {data["user_id"]} успешно заблокирован'
             )
-            blocked_user = await get_user_by_id(data["user_id"])
-            del dict_of_profiles[data["user_id"]]
+            
             await bot.send_message(
                 data["user_id"],
                 f'Привет, {blocked_user["name"]}, вы были заблокированы по причине:\n\n"{data["cause"]}"\n\nВы можете обратиться в поддержку и оспорить решение: @sliv_kursov_admin'
             )
+            await state.finish()
         elif not block:
             await bot.send_message(
                 msg.from_user.id, 
                 'Произошла ошибка, скорее всего пользователя с таким id не существует'
             )
+            await state.finish()
     elif msg.text.lower() == 'нет':
         await bot.send_message(
             msg.from_user.id, 
             'Действие отменено'
         )
+        await state.finish()
     else:
         await bot.send_message(
             msg.from_user.id, 
             'Нет такого варианта ответа, введите "Да/Нет"'
         )
         return 
-    await state.finish()
+    
 
 
 @dp.message_handler(commands=['unblock_user'])
@@ -1940,7 +2002,7 @@ async def state_admin_add_university_step2(msg: types.Message, state: FSMContext
                 'Что-то пошло не так'
             )
         await state.finish()
-    elif msg.text.lower == 'нет':
+    elif msg.text.lower() == 'нет':#обновить
         async with state.proxy() as data:
             data["confirmation"] = msg.text
         await state.finish()
