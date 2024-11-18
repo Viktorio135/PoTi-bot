@@ -1,7 +1,6 @@
 import json
 import time
 import logging
-import schedule
 import subprocess
 import os
 
@@ -35,5 +34,7 @@ async def backup_bd():
         logging.error(f'Ошибка дамба базы данных: {e}')
     finally:
         del os.environ['MYSQL_PWD']
+
+
 
 

@@ -46,3 +46,11 @@ class AdminAddUniversity(StatesGroup):
 class AdminDeleteUniversity(StatesGroup):
     name = State()
     confirmation = State()
+
+
+class AdminDeleteUser(StatesGroup):
+    user_id = State()
+
+
+class AdminGetRefStat(StatesGroup):
+    user_id = State()
